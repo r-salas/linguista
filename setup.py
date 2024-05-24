@@ -31,5 +31,12 @@ setup(
         'License :: OSI Approved :: MIT License',
         'Operating System :: OS Independent',
     ],
-    python_requires='>=3.7',
+    python_requires='>=3.9',
+    setup_requires=[
+        "setuptools"
+    ],
+    install_requires=[
+        "Jinja2",
+        "openai>=1.0.0",
+    ]
 )
