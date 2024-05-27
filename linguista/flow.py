@@ -4,12 +4,13 @@
 #
 #
 
+import copy
 import inspect
+
 from abc import ABC, abstractmethod
 from typing import Optional
 
 from .bot import Bot
-
 from .types import Categorical
 
 
@@ -23,13 +24,29 @@ class FlowSlot:
         assert type in {int, bool, str, float} or isinstance(type, Categorical), f"Invalid type: {type}"
 
     def __repr__(self):
-        return f"FlowSlot(description='{self.description}', type={self.type})"
+        return f"FlowSlot(name='{self.name}', description='{self.description}', type={self.type})"
 
 
 class Flow(ABC):
     """
     Base class for conversational flows.
     """
+
+    @property
+    @abstractmethod
+    def name(self):
+        """
+        The name of the flow.
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def description(self):
+        """
+        A description of the flow.
+        """
+        pass
 
     @abstractmethod
     def start(self, bot: Bot):
@@ -45,6 +62,20 @@ class Flow(ABC):
         pass
 
     def __repr__(self):
-        slots = inspect.getmembers(self, lambda attr: isinstance(attr, FlowSlot))
-        print(slots)
-        return "Flow()"
+        slots = _get_slots_from_flow(self)
+        return f"Flow(name='{self.name}', description='{self.description}', slots={slots})"
+
+
+def _get_slots_from_flow(flow: Flow):
+    return_slots = []
+    slots_members = inspect.getmembers(flow, lambda attr: isinstance(attr, FlowSlot))
+
+    for slot_name, flow_slot in slots_members:
+
+        if flow_slot.name is None:
+            flow_slot = copy.deepcopy(flow_slot)
+            flow_slot.name = slot_name
+
+        return_slots.append(flow_slot)
+
+    return return_slots

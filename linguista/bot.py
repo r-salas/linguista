@@ -4,6 +4,7 @@
 #
 #
 
+
 class Bot:
 
     def reply(self, message: str):
@@ -13,4 +14,4 @@ class Bot:
         Args:
             message: The message to send.
         """
-        ...
+        print(f"Bot: {message}")  # FIXME: Implement this
