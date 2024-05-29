@@ -37,6 +37,10 @@ setup(
     ],
     install_requires=[
         "Jinja2",
-        "openai>=1.0.0",
-    ]
+    ],
+    extras_require={
+        "openai": ["openai>=1.0.0"],
+        "anthropic": ["anthropic"],
+        "redis": ["redis[hiredis]"],
+    }
 )

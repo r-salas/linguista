@@ -61,6 +61,22 @@ class Flow(ABC):
         """
         pass
 
+    def get_slot(self, slot_name: str):
+        slot = getattr(self, slot_name)
+
+        if not isinstance(slot, FlowSlot):
+            raise ValueError(f"Invalid slot name: {slot_name}")
+
+        if slot.name is None:
+            slot = copy.deepcopy(slot)
+            slot.name = slot_name
+
+        return slot
+
+    def get_slots(self):
+        slots = _get_slots_from_flow(self)
+        return slots
+
     def __repr__(self):
         slots = _get_slots_from_flow(self)
         return f"Flow(name='{self.name}', description='{self.description}', slots={slots})"
