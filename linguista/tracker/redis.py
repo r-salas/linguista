@@ -23,6 +23,10 @@ def _get_redis_current_flow_key(session_id: str) -> str:
     return f"linguista:current:{session_id}"
 
 
+def _get_redis_slots_key(session_id: str) -> str:
+    return f"linguista:slots:{session_id}"
+
+
 class RedisTracker(Tracker):
 
     def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0):
@@ -65,3 +69,18 @@ class RedisTracker(Tracker):
         if current is None:
             return None
         return json.loads(current)
+
+    def get_slots(self, session_id: str):
+        slots_key = _get_redis_slots_key(session_id)
+        slots = self._client.hgetall(slots_key)
+        if slots is None:
+            return {}
+        return {key.decode(): value.decode() for key, value in slots.items()}
+
+    def update_slot(self, session_id: str, slot_name: str, slot_value: str):
+        slots_key = _get_redis_slots_key(session_id)
+        self._client.hset(slots_key, slot_name, slot_value)
+
+    def delete_slot(self, session_id: str, slot_name: str):
+        slots_key = _get_redis_slots_key(session_id)
+        self._client.hdel(slots_key, slot_name)
