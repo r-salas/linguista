@@ -62,7 +62,10 @@ class Flow(ABC):
         pass
 
     def get_slot(self, slot_name: str):
-        slot = getattr(self, slot_name)
+        slot = getattr(self, slot_name, None)
+
+        if slot is None:
+            return None
 
         if not isinstance(slot, FlowSlot):
             raise ValueError(f"Invalid slot name: {slot_name}")

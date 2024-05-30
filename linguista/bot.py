@@ -3,7 +3,9 @@
 #   Bot
 #
 #
+
 import uuid
+import warnings
 from typing import Optional, List, Type
 
 from . import Flow
@@ -16,7 +18,7 @@ from .llm import LLM, OpenAI
 
 class Bot:
 
-    def __init__(self, session_id: Optional[str] = None, tracker: Optional[Tracker] = None, model: Optional[LLM] = None, flows: Optional[List[Type[Flow]]] = None):
+    def __init__(self, session_id: Optional[str] = None, tracker: Optional[Tracker] = None, model: Optional[LLM] = None, flows: Optional[List[Flow]] = None):
         if session_id is None:
             session_id = str(uuid.uuid4())
 
@@ -34,7 +36,7 @@ class Bot:
         self.session = Session(session_id, tracker)
         self.flows = flows
 
-    def add_flow(self, flow: Type[Flow]):
+    def add_flow(self, flow: Flow):
         self.flows.append(flow)
 
     def message(self, message, stream=False):
@@ -48,15 +50,20 @@ class Bot:
         Returns:
             The responses.
         """
-        available_flows = []   # FIXME: Instantiate the available flows
+        if not self.flows:
+            warnings.warn("No flows available. Please add flows to the bot.")
+            return
+
         current_flow_meta = self.tracker.get_current_flow(self.session.id) or {}
         conversation = self.tracker.get_conversation(self.session.id)
 
-        current_flow = ...
-        current_slot = ...
+        current_flow = next((flow for flow in self.flows if flow.name == current_flow_meta.get("name")), None)
+        current_slot = None
+        if current_flow is not None:
+            current_slot = current_flow.get_slot(current_flow_meta.get("slot_name"))
 
         command_prompt = render_prompt(
-            available_flows=available_flows,
+            available_flows=self.flows,
             current_flow=current_flow,
             current_slot=current_slot,
             current_conversation=conversation,
@@ -66,10 +73,12 @@ class Bot:
         command_prompt_response = self.model(command_prompt)
         action_list = parse_command_prompt_response(command_prompt_response)
 
-        command_runner = CommandRunner()
-        response_stream = command_runner.run(action_list, current_flow, current_slot)
 
-        for response in response_stream:
+
+        if stream:
+            return response_stream
+        else:
+            return [response for response in response_stream]
 
     def reply(self, message: str):
         """

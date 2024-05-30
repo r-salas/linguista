@@ -58,7 +58,6 @@ class RedisTracker(Tracker):
         current = {
             "flow_name": flow_name,
             "slot_name": slot_name,
-            "slot_description": slot_description
         }
         self._client.set(current_key, json.dumps(current))
         self._client.expire(current_key, 60 * 60 * 24)
