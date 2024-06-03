@@ -5,23 +5,27 @@
 #
 
 import linguista
+
 from linguista import Bot
-from linguista.command import render_prompt
 
 
 class TransferMoneyFlow(linguista.Flow):
 
     amount = linguista.FlowSlot(
+        name="amount",
         description="Amount of money to transfer",
-        type=int,
+        type=float,
+        # TODO: add default value
     )
 
     recipient = linguista.FlowSlot(
+        name="recipient-name",
         description="Recipient name",
         type=linguista.types.Categorical(["Alice", "Bob", "Charlie"])
     )
 
     transfer_confirmation = linguista.FlowSlot(
+        name="transfer-confirmation",
         description="Confirm the transfer",
         type=bool
     )
@@ -34,64 +38,91 @@ class TransferMoneyFlow(linguista.Flow):
     def description(self):
         return "Transfer money to a recipient"
 
-    def start(self, bot: Bot):
-        bot.reply("Welcome to the money transfer service!")
-        bot.reply("Please follow the instructions to complete the transfer.")
+    @linguista.action
+    def start(self):
+        self.reply("Welcome to the money transfer service!")
+        self.reply("Please follow the instructions to complete the transfer.")
 
-        ask_amount = linguista.actions.Ask(self.amount, prompt="How much money would you like to transfer?",
-                                           id="ask-amount")
+        return self.ask_amount
 
-        return ask_amount >> self.validate_amount
+    @linguista.action
+    def chitchat(self):
+        ...
 
-    @linguista.action()
-    def validate_amount(self, bot: linguista.Bot, amount: int):
+    @linguista.action
+    def human_handoff(self):
+        ...
+
+    @linguista.action
+    def cancel(self):
+        ...
+
+    @linguista.action
+    def repeat(self):
+        ...
+
+    @linguista.action
+    def set_slot(self):
+        ...
+
+    @linguista.action
+    def skip_question(self):
+        ...
+
+    @linguista.action
+    def clarify(self):
+        ...
+
+    @linguista.action
+    def ask_amount(self):
+        ask_amount = linguista.actions.Ask(self.amount, prompt="How much money would you like to transfer?")
+
+        self.next(ask_amount, self.validate_amount)
+
+    @linguista.action
+    def validate_amount(self):
+        amount = self.get_slot_value(self.amount)
+
         if amount < 0:
-            bot.reply("Amount must be positive")
-            return linguista.actions.Next("ask-amount")
+            self.reply("Amount must be positive")
+            self.next(self.ask_amount)
+            return  # Do nothing else
 
-        # TODO: ask recipient
+        self.next(self.ask_recipient)
+
+    @linguista.action
+    def ask_recipient(self):
+        ask_recipient = linguista.actions.Ask(self.recipient, prompt="Who would you like to transfer to?")
+
+        return ask_recipient >> self.ask_confirmation
+
+    @linguista.action
+    def ask_confirmation(self):
+        amount = self.get_slot_value(self.amount)
+        recipient = self.get_slot_value(self.recipient)
+
+        ask_confirmation = linguista.actions.Ask(self.transfer_confirmation, prompt=f"Are you sure you want to transfer {recipient} to {amount}?")
+
+        return ask_confirmation >> self.validate_confirmation
+
+    @linguista.action
+    def validate_confirmation(self):
+        transfer_confirmation = self.get_slot_value(self.transfer_confirmation)
+
+        if transfer_confirmation:
+            yield "Transfer completed"
+        else:
+            yield "Transfer cancelled"
 
 
-bot = linguista.Bot(session_id="test-session")
+bot = linguista.Bot(
+    session_id="test-session",
+    flows=[
+        TransferMoneyFlow
+    ]
+)
 
-flow = TransferMoneyFlow()
-
-print(flow)
-
-next_actions = flow.start(bot)
-print(next_actions)
-
-prompt = render_prompt(available_flows=[flow], current_flow=flow, current_slot=flow.amount,
-                       current_conversation=[],
-                       latest_user_message="50€")
-
-print(prompt)
-
-print(flow.get_slots())
-
-print(flow.get_slot("amount"))
-
-from linguista.llm.openai import OpenAI
-openai_llm = OpenAI()
-response = openai_llm(prompt)
-
-print(response)
-
-from linguista.tracker import RedisTracker
-from linguista.enums import Role
-
-"""
-tracker = RedisTracker()
-tracker.add_message_to_conversation("test-session", Role.USER, "Hello")
-conversation = tracker.get_conversation("test-session")
-print(conversation)
-"""
-
-session_id = "test-session"
-
-bot = Bot(session_id=session_id)
-
-response_stream = bot.message("i want to make a transfer", stream=True)
+response_stream = bot.message("I want to transfer money", stream=True)
 
 for response in response_stream:
     print(response)

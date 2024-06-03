@@ -4,19 +4,16 @@
 #
 #
 
-import copy
 import inspect
-
 from abc import ABC, abstractmethod
-from typing import Optional
 
-from .bot import Bot
+from .tracker import Tracker
 from .types import Categorical
 
 
 class FlowSlot:
 
-    def __init__(self, description: str, type=str, name: Optional[str] = None):
+    def __init__(self, name: str, description: str, type=str):
         self.name = name
         self.description = description
         self.type = type
@@ -31,6 +28,18 @@ class Flow(ABC):
     """
     Base class for conversational flows.
     """
+
+    def __init__(self, tracker: Tracker, session_id: str):
+        self.tracker = tracker
+        self.session_id = session_id
+
+        self._slots = _get_slots_from_flow(self)
+        self._slot_values = {slot.name: None for slot in self._slots}
+
+        initial_values = tracker.get_flow_slots(session_id, self.name)
+
+        for slot_name, slot_value in initial_values.items():
+            self._slot_values[slot_name] = slot_value
 
     @property
     @abstractmethod
@@ -49,52 +58,37 @@ class Flow(ABC):
         pass
 
     @abstractmethod
-    def start(self, bot: Bot):
+    def start(self):
         """
         Start the flow.
-
-        Args:
-            bot: The bot instance.
 
         Returns:
             The first action of the flow.
         """
         pass
 
-    def get_slot(self, slot_name: str):
-        slot = getattr(self, slot_name, None)
-
-        if slot is None:
-            return None
-
-        if not isinstance(slot, FlowSlot):
-            raise ValueError(f"Invalid slot name: {slot_name}")
-
-        if slot.name is None:
-            slot = copy.deepcopy(slot)
-            slot.name = slot_name
-
-        return slot
-
     def get_slots(self):
-        slots = _get_slots_from_flow(self)
-        return slots
+        return self._slots
+
+    def set_slot_value(self, slot: FlowSlot, value):
+        self._slot_values[slot.name] = value
+        self.tracker.update_flow_slot(self.session_id, self.name, slot.name, value)
+
+    def get_slot_value(self, slot: FlowSlot):
+        return self._slot_values.get(slot.name)
+
+    def next(self, *actions):
+        ...
 
     def __repr__(self):
-        slots = _get_slots_from_flow(self)
-        return f"Flow(name='{self.name}', description='{self.description}', slots={slots})"
+        return f"Flow(name='{self.name}', description='{self.description}', slots={self._slots})"
 
 
 def _get_slots_from_flow(flow: Flow):
-    return_slots = []
+    return_slots = set()
     slots_members = inspect.getmembers(flow, lambda attr: isinstance(attr, FlowSlot))
 
-    for slot_name, flow_slot in slots_members:
-
-        if flow_slot.name is None:
-            flow_slot = copy.deepcopy(flow_slot)
-            flow_slot.name = slot_name
-
-        return_slots.append(flow_slot)
+    for slot_var_name, flow_slot in slots_members:
+        return_slots.add(flow_slot)
 
     return return_slots

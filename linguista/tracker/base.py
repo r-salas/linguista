@@ -37,30 +37,6 @@ class Tracker(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def get_current_flow(self, session_id: str):
-        """
-        Get the current flow for a session.
-
-        Args:
-            session_id: The session ID.
-
-        Returns:
-            The current flow.
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def update_current_flow(self, session_id: str, flow_name: str):
-        """
-        Update the current flow for a session.
-
-        Args:
-            session_id: The session ID.
-            flow_name: The name of the flow.
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
     def get_slots(self, session_id: str):
         """
         Get the slots for a session.
@@ -92,6 +68,45 @@ class Tracker(ABC):
 
         Args:
             session_id: The session ID.
+            slot_name: The name of the slot.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_flow_slots(self, session_id: str, flow_name: str):
+        """
+        Get the slots for a flow in a session.
+
+        Args:
+            session_id: The session ID.
+            flow_name: The name of the flow.
+
+        Returns:
+            The slots.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def update_flow_slot(self, session_id: str, flow_name: str, slot_name: str, value):
+        """
+        Update a slot for a flow in a session.
+
+        Args:
+            session_id: The session ID.
+            flow_name: The name of the flow.
+            slot_name: The name of the slot.
+            value: The value of the slot.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def delete_flow_slot(self, session_id: str, flow_name: str, slot_name: str):
+        """
+        Delete a slot for a flow in a session.
+
+        Args:
+            session_id: The session ID.
+            flow_name: The name of the flow.
             slot_name: The name of the slot.
         """
         raise NotImplementedError()

@@ -3,35 +3,34 @@
 #   Actions
 #
 #
-from functools import wraps
-from typing import Optional
+
+from typing import Optional, Sequence
 
 from .flow import FlowSlot
 
 
-def action(id: Optional[str] = None):
-    def wrapper(func):
-        action_id = id or func.__name__
-        return ActionFunction(func, id=action_id)
-    return wrapper
+def action(func):
+    return ActionFunction(func)
 
 
 class Action:
 
-    def __init__(self, id: Optional[str] = None):
-        self.id = id
-
     def __rshift__(self, other):
-        return Chain([self, other])
+        return ChainAction([self, other])
 
 
-class Chain:
+class ChainAction(Action):
 
     def __init__(self, actions):
-        self.actions = actions
+        self.actions = []
+        for action_or_chain in actions:
+            if isinstance(action_or_chain, ChainAction):
+                self.actions.extend(action_or_chain.actions)
+            else:
+                self.actions.append(action_or_chain)
 
     def __rshift__(self, other):
-        return Chain(self.actions + [other])
+        return ChainAction(self.actions + [other])
 
     def __repr__(self):
         return f"Chain({self.actions})"
@@ -39,33 +38,28 @@ class Chain:
 
 class ActionFunction(Action):
 
-    def __init__(self, func, id: Optional[str] = None):
-        super().__init__(id)
-
+    def __init__(self, func):
         self.func = func
 
     def __repr__(self):
-        return f"ActionFunction(func={self.func}, id='{self.id}')"
+        return f"ActionFunction(func={self.func})"
 
 
 class Ask(Action):
 
-    def __init__(self, slot: FlowSlot, prompt: Optional[str] = None, id: Optional[str] = None):
-        super().__init__(id)
-
+    def __init__(self, slot: FlowSlot, prompt: Optional[str] = None, next: Optional[Action | Sequence[Action]] = None):
         self.slot = slot
         self.prompt = prompt
+        self.next = next
 
     def __repr__(self):
-        return f"Ask({self.slot}, prompt='{self.prompt}', id='{self.id}')"
+        return f"Ask({self.slot}, prompt='{self.prompt}')"
 
 
-class Next(Action):
+class CallFlow(Action):
 
-    def __init__(self, next_action_id: str, id: Optional[str] = None):
-        super().__init__(id)
-
-        self.next_action_id = next_action_id
+    def __init__(self, flow_name: str):
+        self.flow_name = flow_name
 
     def __repr__(self):
-        return f"Next(next_action_id='{self.next_action_id}', id='{self.id}')"
+        return f"CallFlow({self.flow_name})"
