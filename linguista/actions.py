@@ -41,6 +41,9 @@ class ActionFunction(Action):
     def __init__(self, func):
         self.func = func
 
+    def __call__(self, *args, **kwargs):
+        return self.func(*args, **kwargs)
+
     def __repr__(self):
         return f"ActionFunction(func={self.func})"
 
@@ -63,3 +66,18 @@ class CallFlow(Action):
 
     def __repr__(self):
         return f"CallFlow({self.flow_name})"
+
+
+class Reply(Action):
+
+    def __init__(self, message: str):
+        self.message = message
+
+    def __repr__(self):
+        return f"Reply('{self.message}')"
+
+
+class End(Action):
+
+    def __repr__(self):
+        return "End()"

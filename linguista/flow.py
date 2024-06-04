@@ -92,3 +92,8 @@ def _get_slots_from_flow(flow: Flow):
         return_slots.add(flow_slot)
 
     return return_slots
+
+
+class InternalFlow(Flow):
+
+    pass

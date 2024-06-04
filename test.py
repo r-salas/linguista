@@ -6,7 +6,8 @@
 
 import linguista
 
-from linguista import Bot
+from linguista import Bot, FlowSlot
+from linguista.actions import Ask, Reply
 
 
 class TransferMoneyFlow(linguista.Flow):
@@ -40,10 +41,7 @@ class TransferMoneyFlow(linguista.Flow):
 
     @linguista.action
     def start(self):
-        self.reply("Welcome to the money transfer service!")
-        self.reply("Please follow the instructions to complete the transfer.")
-
-        return self.ask_amount
+        return Reply("Welcome to the money transfer service!") >> Reply("Please follow the instructions to complete the transfer.") >> self.ask_amount
 
     @linguista.action
     def chitchat(self):
@@ -62,7 +60,7 @@ class TransferMoneyFlow(linguista.Flow):
         ...
 
     @linguista.action
-    def set_slot(self):
+    def set_slot(self, slot: FlowSlot, value):
         ...
 
     @linguista.action
@@ -70,25 +68,19 @@ class TransferMoneyFlow(linguista.Flow):
         ...
 
     @linguista.action
-    def clarify(self):
-        ...
-
-    @linguista.action
     def ask_amount(self):
-        ask_amount = linguista.actions.Ask(self.amount, prompt="How much money would you like to transfer?")
+        ask_amount = Ask(self.amount, prompt="How much money would you like to transfer?")
 
-        self.next(ask_amount, self.validate_amount)
+        return ask_amount >> self.validate_amount
 
     @linguista.action
     def validate_amount(self):
         amount = self.get_slot_value(self.amount)
 
         if amount < 0:
-            self.reply("Amount must be positive")
-            self.next(self.ask_amount)
-            return  # Do nothing else
+            return Reply("Amount must be positive") >> self.ask_amount
 
-        self.next(self.ask_recipient)
+        return self.ask_recipient
 
     @linguista.action
     def ask_recipient(self):
@@ -110,9 +102,9 @@ class TransferMoneyFlow(linguista.Flow):
         transfer_confirmation = self.get_slot_value(self.transfer_confirmation)
 
         if transfer_confirmation:
-            yield "Transfer completed"
+            return Reply("Transfer completed")
         else:
-            yield "Transfer cancelled"
+            return Reply("Transfer cancelled")
 
 
 bot = linguista.Bot(

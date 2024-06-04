@@ -8,9 +8,10 @@ import uuid
 import warnings
 from typing import Optional, List, Type
 
-from .actions import ChainAction, Ask, ActionFunction
+from .actions import ChainAction, Ask, ActionFunction, Reply
 from .flow import Flow
-from .commands import render_prompt, parse_command_prompt_response, StartFlowCommand, ChitChatCommand
+from .commands import render_prompt, parse_command_prompt_response, StartFlowCommand, ChitChatCommand, \
+    CancelFlowCommand, ClarifyCommand, HumanHandoffCommand, RepeatCommand, SetSlotCommand, SkipQuestionCommand
 from .llm import LLM, OpenAI
 from .session import Session
 from .tracker import Tracker, RedisTracker
@@ -54,6 +55,8 @@ class Bot:
         Returns:
             The responses.
         """
+        yield from ()  # HACK: Convert to iterator, even if there's nothing to yield, i.e. no replies / ask
+
         if not self.flows:
             warnings.warn("No flows available. Please add flows to the bot.")
             return
@@ -73,34 +76,43 @@ class Bot:
 
         response = self.model(prompt)
 
-        action_list = parse_command_prompt_response(response)
+        command_list = parse_command_prompt_response(response)
 
-        print(action_list)
+        print(command_list)
 
-        next_actions = []
-
-        for action in action_list:
-            if isinstance(action, ChitChatCommand):
-
-            elif isinstance(action, StartFlowCommand):
-                flow_to_start = next((flow for flow in self.flows if flow.name == action.name), None)
+        for command in command_list:
+            if isinstance(command, ChitChatCommand):
+                if current_flow is not None and hasattr(current_flow, "chitchat"):
+                    next_actions = current_flow.chitchat(current_flow)
+                else:
+                    ...   # Default chitchat
+            elif isinstance(command, CancelFlowCommand):
+                ...
+            elif isinstance(command, ClarifyCommand):
+                ...
+            elif isinstance(command, HumanHandoffCommand):
+                ...
+            elif isinstance(command, RepeatCommand):
+                ...
+            elif isinstance(command, SetSlotCommand):
+                ...
+            elif isinstance(command, SkipQuestionCommand):
+                ...
+            elif isinstance(command, StartFlowCommand):
+                flow_to_start = next((flow for flow in self.flows if flow.name == command.name), None)
 
                 if flow_to_start is None:
-                    warnings.warn(f"Flow '{action.name}' not found.")
+                    warnings.warn(f"Flow '{command.name}' not found.")
                     continue
 
                 # TODO: set current flow to tracker
                 # TODO: change current flow
 
-                next_actions = flow_to_start.start()
+                next_actions = flow_to_start.start(flow_to_start)
 
                 if isinstance(next_actions, ChainAction):
                     next_actions_list = next_actions.actions
                 else:
                     next_actions_list = [next_actions]
 
-                for next_action in next_actions_list:
-                    print(next_action)
-                    if isinstance(next_action, Ask):
-                        yield next_action.prompt
-                    elif isinstance(next_action, ActionFunction):
+                print(next_actions_list)
