@@ -44,30 +44,6 @@ class TransferMoneyFlow(linguista.Flow):
         return Reply("Welcome to the money transfer service!") >> Reply("Please follow the instructions to complete the transfer.") >> self.ask_amount
 
     @linguista.action
-    def chitchat(self):
-        ...
-
-    @linguista.action
-    def human_handoff(self):
-        ...
-
-    @linguista.action
-    def cancel(self):
-        ...
-
-    @linguista.action
-    def repeat(self):
-        ...
-
-    @linguista.action
-    def set_slot(self, slot: FlowSlot, value):
-        ...
-
-    @linguista.action
-    def skip_question(self):
-        ...
-
-    @linguista.action
     def ask_amount(self):
         ask_amount = Ask(self.amount, prompt="How much money would you like to transfer?")
 
