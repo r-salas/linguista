@@ -3,11 +3,11 @@
 #   Types
 #
 #
+from dataclasses import dataclass
+from typing import List
 
+
+@dataclass
 class Categorical:
 
-    def __init__(self, categories):
-        self.categories = categories
-
-    def __repr__(self):
-        return f"Categorical({self.categories})"
+    categories: List[str]

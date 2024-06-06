@@ -5,8 +5,10 @@
 #
 
 import json
-from typing import Optional
+from typing import Optional, List, Tuple, Sequence
 
+from .. import Flow
+from ..actions import Action
 from ..enums import Role
 from .base import Tracker
 
@@ -22,6 +24,14 @@ def _get_redis_conversation_key(session_id: str) -> str:
 
 def _get_redis_current_flow_key(session_id: str) -> str:
     return f"linguista:current:{session_id}"
+
+
+def _get_redis_current_slot_key(session_id: str) -> str:
+    return f"linguista:current_slot:{session_id}"
+
+
+def _get_redis_current_actions_key(session_id: str) -> str:
+    return f"linguista:current_actions:{session_id}"
 
 
 def _get_redis_slots_key(session_id: str) -> str:
@@ -91,3 +101,51 @@ class RedisTracker(Tracker):
     def delete_flow_slot(self, session_id: str, flow_name: str, slot_name: str):
         slots_key = _get_redis_flow_slots_key(session_id, flow_name)
         self._client.hdel(slots_key, slot_name)
+
+    def set_current_flow(self, session_id: str, flow_name: str):
+        current_flow_key = _get_redis_current_flow_key(session_id)
+        self._client.set(current_flow_key, flow_name)
+
+    def get_current_flow(self, session_id: str) -> Optional[str]:
+        current_flow_key = _get_redis_current_flow_key(session_id)
+        current_flow = self._client.get(current_flow_key)
+
+        if current_flow is None:
+            return None
+
+        return current_flow.decode()
+
+    def delete_current_flow(self, session_id: str):
+        current_flow_key = _get_redis_current_flow_key(session_id)
+        self._client.delete(current_flow_key)
+
+    def set_current_slot(self, session_id: str, slot_name: str):
+        current_slot_key = _get_redis_current_slot_key(session_id)
+        self._client.set(current_slot_key, slot_name)
+
+    def get_current_slot(self, session_id: str) -> Optional[str]:
+        current_slot_key = _get_redis_current_slot_key(session_id)
+        current_slot = self._client.get(current_slot_key)
+
+        if current_slot is None:
+            return None
+
+        return current_slot.decode()
+
+    def delete_current_slot(self, session_id: str):
+        current_slot_key = _get_redis_current_slot_key(session_id)
+        self._client.delete(current_slot_key)
+
+    def save_current_actions(self, session_id: str, actions: Sequence[Tuple[Action, Flow]]):
+        current_actions_key = _get_redis_current_actions_key(session_id)
+        ...
+
+    def get_current_actions(self, session_id: str) -> Sequence[Tuple[Action, Flow]]:
+        current_actions_key = _get_redis_current_actions_key(session_id)
+        current_actions_json_str = self._client.get(current_actions_key)
+
+        return []
+
+    def delete_current_actions(self, session_id: str):
+        current_actions_key = _get_redis_current_actions_key(session_id)
+        self._client.delete(current_actions_key)

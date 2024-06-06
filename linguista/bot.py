@@ -38,10 +38,13 @@ def _listify_actions(actions):
         return [actions]
 
 
-def _run_commands(commands: List, flows: List[Flow], current_flow: Optional[Flow], tracker: Tracker, session_id: str):
+def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, session_id: str):
     yield from ()  # HACK: Convert to iterator, even if there's nothing to yield, i.e. no replies / ask
 
-    next_actions = deque()  # Retrieve next actions from tracker
+    current_flow = tracker.get_current_flow(session_id)
+
+    next_actions = tracker.get_current_actions(session_id)
+    next_actions = deque(next_actions)  # Convert to deque for efficient popping
 
     print(commands)
 
@@ -82,17 +85,20 @@ def _run_commands(commands: List, flows: List[Flow], current_flow: Optional[Flow
     following = next_actions[0] if next_actions else None
 
     if following is None:
-        ...   # No more actions to run, set current_flow to None and save to tracker
+        tracker.delete_current_flow(session_id)
+        tracker.delete_current_slot(session_id)
+        tracker.delete_current_actions(session_id)
     else:
         following_next_action, following_flow = following
 
         if isinstance(following_next_action, Ask):
             yield following_next_action.prompt
-            # set current_slot to tracker
+            tracker.set_current_slot(session_id, following_next_action.slot.name)
+        else:
+            tracker.delete_current_slot(session_id)
 
-        # set current flow to following_flow
-
-    print(next_actions)  # TODO: save next_actions to tracker
+        tracker.set_current_flow(session_id, following_flow.name)
+        tracker.save_current_actions(session_id, next_actions)
 
 
 class Bot:
@@ -143,8 +149,8 @@ class Bot:
 
         print(current_conversation)
 
-        current_flow = None
-        current_slot = None
+        current_flow = self.tracker.get_current_flow(self.session.id)
+        current_slot = self.tracker.get_current_slot(self.session.id)
 
         prompt = render_prompt(
             available_flows=self.flows,
@@ -169,12 +175,10 @@ class Bot:
         correction_flow = _find_internal_flow(self.flows, default_flows.Correction)
         skip_question_flow = _find_internal_flow(self.flows, default_flows.SkipQuestion)
 
-        current_flow = None
-
         def response_generator():
-            for response in _run_commands(commands=command_list, flows=self.flows, current_flow=current_flow,
-                                           tracker=self.tracker, session_id=self.session.id):
-                yield response
+            for bot_response in _run_commands(commands=command_list, flows=self.flows, tracker=self.tracker,
+                                              session_id=self.session.id):
+                yield bot_response
                 # self.tracker.add_message_to_conversation(self.session.id, Role.ASSISTANT, response)
 
         if stream:

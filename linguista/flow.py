@@ -6,23 +6,20 @@
 
 import inspect
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Type, Union
 
 from .tracker import Tracker
 from .types import Categorical
 
 
+@dataclass
 class FlowSlot:
 
-    def __init__(self, name: str, description: str, type=str, ask_before_filling: bool = True):
-        self.name = name
-        self.description = description
-        self.type = type
-        self.ask_before_filling = ask_before_filling
-
-        assert type in {int, bool, str, float} or isinstance(type, Categorical), f"Invalid type: {type}"
-
-    def __repr__(self):
-        return f"FlowSlot(name='{self.name}', description='{self.description}', type={self.type}, ask_before_filling={self.ask_before_filling})"
+    name: str
+    description: str
+    type: Union[Type, Categorical]
+    ask_before_filling: bool = True
 
 
 class Flow(ABC):

@@ -4,81 +4,76 @@
 #
 #
 
-from typing import Optional, Sequence
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Optional, Sequence, List
 
 from .flow import FlowSlot
 
 
 def action(func):
+    """
+    Decorator to create an action from a function
+    """
     return ActionFunction(func)
 
 
-class Action:
+@dataclass
+class Action(ABC):
 
     def __rshift__(self, other):
         return ChainAction([self, other])
 
 
+@dataclass
 class ChainAction(Action):
 
-    def __init__(self, actions):
-        self.actions = []
-        for action_or_chain in actions:
-            if isinstance(action_or_chain, ChainAction):
-                self.actions.extend(action_or_chain.actions)
+    actions: List[Action]
+
+    def __post_init__(self):
+        # Flatten the actions
+        new_actions = []
+        for action_instance in self.actions:
+            if isinstance(action_instance, ChainAction):
+                new_actions.extend(action_instance.actions)
             else:
-                self.actions.append(action_or_chain)
+                new_actions.append(action_instance)
+
+        self.actions = new_actions
 
     def __rshift__(self, other):
         return ChainAction(self.actions + [other])
 
-    def __repr__(self):
-        return f"Chain({self.actions})"
 
-
+@dataclass
 class ActionFunction(Action):
 
-    def __init__(self, func):
-        self.func = func
-        self.flow = func.__self__
+    func: callable
 
     def __call__(self, *args, **kwargs):
-        return self.func(self.flow, *args, **kwargs)
-
-    def __repr__(self):
-        return f"ActionFunction(func={self.func}, flow={self.flow})"
+        flow = self.func.__self__
+        return self.func(flow, *args, **kwargs)
 
 
+@dataclass
 class Ask(Action):
 
-    def __init__(self, slot: FlowSlot, prompt: Optional[str] = None, next: Optional[Action | Sequence[Action]] = None):
-        self.slot = slot
-        self.prompt = prompt
-        self.next = next
-
-    def __repr__(self):
-        return f"Ask({self.slot}, prompt='{self.prompt}')"
+    slot: FlowSlot
+    prompt: Optional[str] = None
 
 
+@dataclass
 class CallFlow(Action):
 
-    def __init__(self, flow_name: str):
-        self.flow_name = flow_name
-
-    def __repr__(self):
-        return f"CallFlow({self.flow_name})"
+    flow_name: str
 
 
+@dataclass
 class Reply(Action):
 
-    def __init__(self, message: str):
-        self.message = message
-
-    def __repr__(self):
-        return f"Reply('{self.message}')"
+    message: str
 
 
+@dataclass
 class End(Action):
-
-    def __repr__(self):
-        return "End()"
+    pass
