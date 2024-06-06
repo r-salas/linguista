@@ -12,6 +12,7 @@ from typing import Optional, List, Type
 from . import default_flows
 from .actions import ActionFunction, Reply, Ask, ChainAction
 from .commands import render_prompt, parse_command_prompt_response, SetSlotCommand, StartFlowCommand
+from .enums import Role
 from .flow import Flow
 from .llm import LLM, OpenAI
 from .session import Session
@@ -53,36 +54,43 @@ def _run_commands(commands: List, flows: List[Flow], current_flow: Optional[Flow
             if current_flow is None:
                 raise ValueError(f"Flow '{command.name}' not found.")
 
-            next_actions.appendleft(current_flow.start)
+            next_actions.appendleft((current_flow.start, current_flow))
         else:
             raise ValueError(f"Invalid command: {command}")
 
         while next_actions:
-            action = next_actions.popleft()
+            action, action_flow = next_actions.popleft()
 
             if isinstance(action, Reply):
                 yield action.message
             elif isinstance(action, Ask):
-                flow_slot_value = tracker.get_flow_slot(session_id, current_flow.name, action.slot.name)
+                flow_slot_value = tracker.get_flow_slot(session_id, action_flow.name, action.slot.name)
 
                 # If the slot value is not set, ask the user. Otherwise, skip the ask
                 if flow_slot_value is None:
-                    next_actions.appendleft(action)
+                    next_actions.appendleft((action, action_flow))
                     break  # We don't want to run the next actions until the user responds
             elif isinstance(action, ActionFunction):
-                action_func_next_actions = action(current_flow)
+                action_func_next_actions = action()
                 action_func_next_actions = _listify_actions(action_func_next_actions)
+                action_func_next_actions = [(action, action_flow) for action in action_func_next_actions]
                 next_actions.extendleft(reversed(action_func_next_actions))  # Prepend the actions to the queue
             else:
                 raise ValueError(f"Invalid action: {action}")
 
     # If there are any pending asks, yield the prompt for the first one
-    following_next_action = next_actions[0] if next_actions else None
+    following = next_actions[0] if next_actions else None
 
-    if following_next_action is None:
+    if following is None:
+        ...   # No more actions to run, set current_flow to None and save to tracker
+    else:
+        following_next_action, following_flow = following
 
-    elif isinstance(following_next_action, Ask):
-        yield following_next_action.prompt
+        if isinstance(following_next_action, Ask):
+            yield following_next_action.prompt
+            # set current_slot to tracker
+
+        # set current flow to following_flow
 
     print(next_actions)  # TODO: save next_actions to tracker
 
@@ -131,6 +139,8 @@ class Bot:
 
         current_conversation = self.tracker.get_conversation(self.session.id)
 
+        # self.tracker.add_message_to_conversation(self.session.id, Role.USER, message)
+
         print(current_conversation)
 
         current_flow = None
@@ -161,10 +171,13 @@ class Bot:
 
         current_flow = None
 
-        response_generator = _run_commands(commands=command_list, flows=self.flows, current_flow=current_flow,
-                                           tracker=self.tracker, session_id=self.session.id)
+        def response_generator():
+            for response in _run_commands(commands=command_list, flows=self.flows, current_flow=current_flow,
+                                           tracker=self.tracker, session_id=self.session.id):
+                yield response
+                # self.tracker.add_message_to_conversation(self.session.id, Role.ASSISTANT, response)
 
         if stream:
-            return response_generator
+            return response_generator()
         else:
-            return list(response_generator)
+            return list(response_generator())

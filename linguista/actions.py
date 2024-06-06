@@ -40,12 +40,13 @@ class ActionFunction(Action):
 
     def __init__(self, func):
         self.func = func
+        self.flow = func.__self__
 
     def __call__(self, *args, **kwargs):
-        return self.func(*args, **kwargs)
+        return self.func(self.flow, *args, **kwargs)
 
     def __repr__(self):
-        return f"ActionFunction(func={self.func})"
+        return f"ActionFunction(func={self.func}, flow={self.flow})"
 
 
 class Ask(Action):
