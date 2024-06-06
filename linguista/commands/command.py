@@ -30,17 +30,6 @@ with open(os.path.join(current_dir, "command_prompt_template.jinja2")) as fp:
     COMMAND_PROMPT_TEMPLATE = fp.read()
 
 
-def _find_flow_by_name(flows, name):
-    return next((flow for flow in flows if flow.name == name), None)
-
-
-def _listify_actions(actions):
-    if isinstance(actions, ChainAction):
-        return actions.actions
-    else:
-        return [actions]
-
-
 def render_prompt(available_flows: Sequence[Flow], current_flow: Optional[Flow], current_slot: Optional[FlowSlot],
                   current_conversation: List[Dict[str, str]], latest_user_message: str):
     latest_user_message = latest_user_message.replace("\n", " ")
@@ -155,50 +144,3 @@ def parse_command_prompt_response(response: str):
                 commands.append(ClarifyCommand(options))  # FIXME: check if flows are valid
 
     return commands
-
-
-def run_commands(commands: List, flows: List[Flow], current_flow: Optional[Flow], tracker: Tracker, session_id: str):
-    yield from ()  # HACK: Convert to iterator, even if there's nothing to yield, i.e. no replies / ask
-
-    next_actions = deque()
-
-    print(commands)
-
-    for command in commands:
-        if isinstance(command, SetSlotCommand):
-            tracker.set_flow_slot(session_id, current_flow.name, command.name, command.value)
-        elif isinstance(command, StartFlowCommand):
-            current_flow = _find_flow_by_name(flows, command.name)
-
-            if current_flow is None:
-                raise ValueError(f"Flow '{command.name}' not found.")
-
-            current_flow_next_actions = current_flow.start(current_flow)
-            current_flow_next_actions = _listify_actions(current_flow_next_actions)
-            next_actions.extendleft(reversed(current_flow_next_actions))
-        else:
-            raise ValueError(f"Invalid command: {command}")
-
-        while next_actions:
-            action = next_actions.popleft()
-
-            if isinstance(action, Reply):
-                yield action.message
-            elif isinstance(action, Ask):
-                flow_slot_value = tracker.get_flow_slot(session_id, current_flow.name, action.slot.name)
-
-                if flow_slot_value is None:
-                    next_actions.appendleft(action)
-                    break  # We don't want to run the next actions until the user responds
-            elif isinstance(action, ActionFunction):
-                action_func_next_actions = action(current_flow)
-                action_func_next_actions = _listify_actions(action_func_next_actions)
-                next_actions.extendleft(reversed(action_func_next_actions))  # Prepend the actions to the queue
-            else:
-                raise ValueError(f"Invalid action: {action}")
-
-    # If there are any pending asks, yield the prompt
-    if next_actions and isinstance(next_actions[0], Ask):
-        yield next_actions[0].prompt
-
-    print(next_actions)   # TODO: save next_actions to tracker

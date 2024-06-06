@@ -10,9 +10,8 @@ from collections import deque
 from typing import Optional, List, Type
 
 from . import default_flows
-from .actions import ChainAction, ActionFunction
-from .commands import render_prompt, parse_command_prompt_response
-from .commands.command import run_commands
+from .actions import ActionFunction, Reply, Ask, ChainAction
+from .commands import render_prompt, parse_command_prompt_response, SetSlotCommand, StartFlowCommand
 from .flow import Flow
 from .llm import LLM, OpenAI
 from .session import Session
@@ -25,6 +24,67 @@ def assert_is_action(action):
 
 def _find_internal_flow(flows, internal_flow_type):
     return next((flow for flow in flows if isinstance(flow, internal_flow_type)), None)
+
+
+def _find_flow_by_name(flows, name):
+    return next((flow for flow in flows if flow.name == name), None)
+
+
+def _listify_actions(actions):
+    if isinstance(actions, ChainAction):
+        return actions.actions
+    else:
+        return [actions]
+
+
+def _run_commands(commands: List, flows: List[Flow], current_flow: Optional[Flow], tracker: Tracker, session_id: str):
+    yield from ()  # HACK: Convert to iterator, even if there's nothing to yield, i.e. no replies / ask
+
+    next_actions = deque()  # Retrieve next actions from tracker
+
+    print(commands)
+
+    for command in commands:
+        if isinstance(command, SetSlotCommand):
+            tracker.set_flow_slot(session_id, current_flow.name, command.name, command.value)
+        elif isinstance(command, StartFlowCommand):
+            current_flow = _find_flow_by_name(flows, command.name)
+
+            if current_flow is None:
+                raise ValueError(f"Flow '{command.name}' not found.")
+
+            next_actions.appendleft(current_flow.start)
+        else:
+            raise ValueError(f"Invalid command: {command}")
+
+        while next_actions:
+            action = next_actions.popleft()
+
+            if isinstance(action, Reply):
+                yield action.message
+            elif isinstance(action, Ask):
+                flow_slot_value = tracker.get_flow_slot(session_id, current_flow.name, action.slot.name)
+
+                # If the slot value is not set, ask the user. Otherwise, skip the ask
+                if flow_slot_value is None:
+                    next_actions.appendleft(action)
+                    break  # We don't want to run the next actions until the user responds
+            elif isinstance(action, ActionFunction):
+                action_func_next_actions = action(current_flow)
+                action_func_next_actions = _listify_actions(action_func_next_actions)
+                next_actions.extendleft(reversed(action_func_next_actions))  # Prepend the actions to the queue
+            else:
+                raise ValueError(f"Invalid action: {action}")
+
+    # If there are any pending asks, yield the prompt for the first one
+    following_next_action = next_actions[0] if next_actions else None
+
+    if following_next_action is None:
+
+    elif isinstance(following_next_action, Ask):
+        yield following_next_action.prompt
+
+    print(next_actions)  # TODO: save next_actions to tracker
 
 
 class Bot:
@@ -51,8 +111,8 @@ class Bot:
         self.flows = [flow_cls(tracker, session_id) for flow_cls in flows]
 
     def add_flow(self, flow: Type[Flow]):
-        flow = flow(self.tracker, self.session.id)
-        self.flows.append(flow)
+        flow_instance = flow(self.tracker, self.session.id)
+        self.flows.append(flow_instance)
 
     def message(self, message, stream=False):
         """
@@ -65,13 +125,13 @@ class Bot:
         Returns:
             The responses.
         """
-        yield from ()  # HACK: Convert to iterator, even if there's nothing to yield, i.e. no replies / ask
-
         if not self.flows:
             warnings.warn("No flows available. Please add flows to the bot.")
-            return
+            return iter(())   # Return an empty iterator
 
         current_conversation = self.tracker.get_conversation(self.session.id)
+
+        print(current_conversation)
 
         current_flow = None
         current_slot = None
@@ -101,5 +161,10 @@ class Bot:
 
         current_flow = None
 
-        yield from run_commands(commands=command_list, flows=self.flows, current_flow=current_flow,
-                                tracker=self.tracker, session_id=self.session.id)
+        response_generator = _run_commands(commands=command_list, flows=self.flows, current_flow=current_flow,
+                                           tracker=self.tracker, session_id=self.session.id)
+
+        if stream:
+            return response_generator
+        else:
+            return list(response_generator)

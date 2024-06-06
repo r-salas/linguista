@@ -92,6 +92,5 @@ bot = linguista.Bot(
 )
 
 response_stream = bot.message("I want to transfer 50€ to Enrique", stream=True)
-
 for response in response_stream:
     print(response)
