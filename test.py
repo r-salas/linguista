@@ -28,7 +28,8 @@ class TransferMoneyFlow(linguista.Flow):
     transfer_confirmation = linguista.FlowSlot(
         name="transfer-confirmation",
         description="Confirm the transfer",
-        type=bool
+        type=bool,
+        ask_before_filling=False
     )
 
     @property
@@ -51,7 +52,7 @@ class TransferMoneyFlow(linguista.Flow):
 
     @linguista.action
     def validate_amount(self):
-        amount = self.get_slot_value(self.amount)
+        amount = 50  # FIXME: Get the amount from the slot
 
         if amount < 0:
             return Reply("Amount must be positive") >> self.ask_amount
@@ -66,16 +67,16 @@ class TransferMoneyFlow(linguista.Flow):
 
     @linguista.action
     def ask_confirmation(self):
-        amount = self.get_slot_value(self.amount)
-        recipient = self.get_slot_value(self.recipient)
+        amount = 50   # FIXME: Get the amount from the slot
+        recipient = "Enrique"  # FIXME: Get the recipient from the slot
 
-        ask_confirmation = linguista.actions.Ask(self.transfer_confirmation, prompt=f"Are you sure you want to transfer {recipient} to {amount}?")
+        ask_confirmation = linguista.actions.Ask(self.transfer_confirmation, prompt=f"Are you sure you want to transfer {amount}€ to {recipient}?")
 
         return ask_confirmation >> self.validate_confirmation
 
     @linguista.action
     def validate_confirmation(self):
-        transfer_confirmation = self.get_slot_value(self.transfer_confirmation)
+        transfer_confirmation = True  # FIXME: Get the confirmation from the slot
 
         if transfer_confirmation:
             return Reply("Transfer completed")
@@ -90,7 +91,7 @@ bot = linguista.Bot(
     ]
 )
 
-response_stream = bot.message("I want to transfer money", stream=True)
+response_stream = bot.message("I want to transfer 50€ to Enrique", stream=True)
 
 for response in response_stream:
     print(response)

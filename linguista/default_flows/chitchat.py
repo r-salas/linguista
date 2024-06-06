@@ -3,12 +3,12 @@
 #   Chitchat flow
 #
 #
-from .. import action
-from ..actions import Reply
-from ..flow import InternalFlow
+
+from ..actions import Reply, action
+from ..flow import Flow
 
 
-class Chitchat(InternalFlow):
+class Chitchat(Flow):
 
     @property
     def name(self):

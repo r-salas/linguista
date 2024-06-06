@@ -3,12 +3,12 @@
 #   Cannot handle
 #
 #
-from .. import action
-from ..actions import Reply
-from ..flow import InternalFlow
+
+from ..actions import Reply, action
+from ..flow import Flow
 
 
-class CannotHandle(InternalFlow):
+class CannotHandle(Flow):
 
     @property
     def name(self):

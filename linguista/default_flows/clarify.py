@@ -4,11 +4,11 @@
 #
 #
 
-from ..flow import InternalFlow
+from ..flow import Flow
 from ..actions import Reply, action
 
 
-class Clarify(InternalFlow):
+class Clarify(Flow):
 
     @property
     def name(self):

@@ -4,12 +4,11 @@
 #
 #
 
-from .. import action
-from ..actions import Reply
-from ..flow import InternalFlow
+from ..actions import Reply, action
+from ..flow import Flow
 
 
-class CancelFlow(InternalFlow):
+class CancelFlow(Flow):
 
     @property
     def name(self):

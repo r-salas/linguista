@@ -4,11 +4,11 @@
 #
 #
 
-from ..flow import Flow, InternalFlow
+from ..flow import Flow
 from ..actions import action, Reply
 
 
-class HumanHandoff(InternalFlow):
+class HumanHandoff(Flow):
 
     @property
     def name(self):

@@ -6,15 +6,25 @@
 
 import uuid
 import warnings
+from collections import deque
 from typing import Optional, List, Type
 
-from .actions import ChainAction, Ask, ActionFunction, Reply
+from . import default_flows
+from .actions import ChainAction, ActionFunction
+from .commands import render_prompt, parse_command_prompt_response
+from .commands.command import run_commands
 from .flow import Flow
-from .commands import render_prompt, parse_command_prompt_response, StartFlowCommand, ChitChatCommand, \
-    CancelFlowCommand, ClarifyCommand, HumanHandoffCommand, RepeatCommand, SetSlotCommand, SkipQuestionCommand
 from .llm import LLM, OpenAI
 from .session import Session
 from .tracker import Tracker, RedisTracker
+
+
+def assert_is_action(action):
+    assert isinstance(action, ActionFunction), "Action must be an instance of ActionFunction."
+
+
+def _find_internal_flow(flows, internal_flow_type):
+    return next((flow for flow in flows if isinstance(flow, internal_flow_type)), None)
 
 
 class Bot:
@@ -78,41 +88,18 @@ class Bot:
 
         command_list = parse_command_prompt_response(response)
 
-        print(command_list)
+        chitchat_flow = _find_internal_flow(self.flows, default_flows.Chitchat)
+        cancel_flow = _find_internal_flow(self.flows, default_flows.CancelFlow)
+        clarify_flow = _find_internal_flow(self.flows, default_flows.Clarify)
+        human_handoff_flow = _find_internal_flow(self.flows, default_flows.HumanHandoff)
+        cannot_handle_flow = _find_internal_flow(self.flows, default_flows.CannotHandle)
+        completed_flow = _find_internal_flow(self.flows, default_flows.Completed)
+        continue_interrupted_flow = _find_internal_flow(self.flows, default_flows.ContinueInterrupted)
+        internal_error_flow = _find_internal_flow(self.flows, default_flows.InternalError)
+        correction_flow = _find_internal_flow(self.flows, default_flows.Correction)
+        skip_question_flow = _find_internal_flow(self.flows, default_flows.SkipQuestion)
 
-        for command in command_list:
-            if isinstance(command, ChitChatCommand):
-                if current_flow is not None and hasattr(current_flow, "chitchat"):
-                    next_actions = current_flow.chitchat(current_flow)
-                else:
-                    ...   # Default chitchat
-            elif isinstance(command, CancelFlowCommand):
-                ...
-            elif isinstance(command, ClarifyCommand):
-                ...
-            elif isinstance(command, HumanHandoffCommand):
-                ...
-            elif isinstance(command, RepeatCommand):
-                ...
-            elif isinstance(command, SetSlotCommand):
-                ...
-            elif isinstance(command, SkipQuestionCommand):
-                ...
-            elif isinstance(command, StartFlowCommand):
-                flow_to_start = next((flow for flow in self.flows if flow.name == command.name), None)
+        current_flow = None
 
-                if flow_to_start is None:
-                    warnings.warn(f"Flow '{command.name}' not found.")
-                    continue
-
-                # TODO: set current flow to tracker
-                # TODO: change current flow
-
-                next_actions = flow_to_start.start(flow_to_start)
-
-                if isinstance(next_actions, ChainAction):
-                    next_actions_list = next_actions.actions
-                else:
-                    next_actions_list = [next_actions]
-
-                print(next_actions_list)
+        yield from run_commands(commands=command_list, flows=self.flows, current_flow=current_flow,
+                                tracker=self.tracker, session_id=self.session.id)

@@ -58,25 +58,29 @@ class RedisTracker(Tracker):
         self._client.rpush(conversation_key, json.dumps({"role": role.value, "message": message}))
         self._client.expire(conversation_key, 60 * 60 * 24)  # FIXME: Make this configurable
 
-    def get_slots(self, session_id: str):
+    def get_slot(self, session_id: str, slot_name: str):
         slots_key = _get_redis_slots_key(session_id)
-        slots = self._client.hgetall(slots_key)
-        if slots is None:
-            return {}
-        return {key.decode(): value.decode() for key, value in slots.items()}
+        slot = self._client.hget(slots_key, slot_name)
 
-    def get_flow_slots(self, session_id: str, flow_name: str):
+        if slot is None:
+            return None
+
+        return slot.decode()
+
+    def get_flow_slot(self, session_id: str, flow_name: str, slot_name: str):
         slots_key = _get_redis_flow_slots_key(session_id, flow_name)
-        slots = self._client.hgetall(slots_key)
-        if slots is None:
-            return {}
-        return {key.decode(): value.decode() for key, value in slots.items()}
+        slot = self._client.hget(slots_key, slot_name)
 
-    def update_flow_slot(self, session_id: str, flow_name: str, slot_name: str, slot_value: str):
+        if slot is None:
+            return None
+
+        return slot.decode()
+
+    def set_flow_slot(self, session_id: str, flow_name: str, slot_name: str, slot_value: str):
         slots_key = _get_redis_flow_slots_key(session_id, flow_name)
         self._client.hset(slots_key, slot_name, slot_value)
 
-    def update_slot(self, session_id: str, slot_name: str, slot_value: str):
+    def set_slot(self, session_id: str, slot_name: str, slot_value: str):
         slots_key = _get_redis_slots_key(session_id)
         self._client.hset(slots_key, slot_name, slot_value)
 

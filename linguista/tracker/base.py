@@ -37,12 +37,13 @@ class Tracker(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def get_slots(self, session_id: str):
+    def get_slot(self, session_id: str, slot_name: str):
         """
         Get the slots for a session.
 
         Args:
             session_id: The session ID.
+            slot_name: The name of the slot.
 
         Returns:
             The slots.
@@ -50,7 +51,7 @@ class Tracker(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def update_slot(self, session_id: str, slot_name: str, value):
+    def set_slot(self, session_id: str, slot_name: str, value):
         """
         Update a slot for a session.
 
@@ -73,13 +74,14 @@ class Tracker(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def get_flow_slots(self, session_id: str, flow_name: str):
+    def get_flow_slot(self, session_id: str, flow_name: str, slot_name: str):
         """
         Get the slots for a flow in a session.
 
         Args:
             session_id: The session ID.
             flow_name: The name of the flow.
+            slot_name: The name of the slot.
 
         Returns:
             The slots.
@@ -87,7 +89,7 @@ class Tracker(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def update_flow_slot(self, session_id: str, flow_name: str, slot_name: str, value):
+    def set_flow_slot(self, session_id: str, flow_name: str, slot_name: str, value):
         """
         Update a slot for a flow in a session.
 
