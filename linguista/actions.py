@@ -6,9 +6,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
-from typing import Optional, Sequence, List
-
-import dacite
+from typing import Optional, Sequence, List, Union
 
 from .flow import FlowSlot
 
@@ -23,7 +21,7 @@ def action(func):
 @dataclass(frozen=True)
 class Action:
 
-    @staticmethod
+    @classmethod
     def from_dict(cls, data: dict):
         action_subclasses = cls.__subclasses__()
         action_cls = next((action_cls for action_cls in action_subclasses if action_cls.__name__ == data["type"]), None)
@@ -37,6 +35,9 @@ class Action:
 
     def __rshift__(self, other):
         return ChainAction([self, other])
+
+    def to_dict(self):
+        raise NotImplementedError()
 
 
 @dataclass(frozen=True)
@@ -58,7 +59,7 @@ class ChainAction(Action):
     def __rshift__(self, other):
         return ChainAction(self.actions + [other])
 
-    @staticmethod
+    @classmethod
     def from_dict(cls, data: dict):
         raise NotImplementedError()
 
@@ -69,22 +70,22 @@ class ChainAction(Action):
 @dataclass(frozen=True)
 class ActionFunction(Action):
 
-    func: callable
+    function: Union[str, callable]   # it may be a string with the function name
 
     @classmethod
     def from_dict(cls, data: dict):
-        ...  # FIXME: Implement this
-
-    def __call__(self, *args, **kwargs):
-        return self.func(*args, **kwargs)
+        return ActionFunction(function=data["function"])
 
     def to_dict(self):
+        if isinstance(self.function, str):
+            function_name = self.function
+        else:
+            function_name = self.function.__name__
+
         return {
             "type": self.__class__.__name__,
             "action": {
-                "func": {
-                    "name": self.func.__name__
-                }
+                "function": function_name
             }
         }
 
@@ -95,7 +96,7 @@ class Ask(Action):
     slot: FlowSlot
     prompt: Optional[str] = None
 
-    @staticmethod
+    @classmethod
     def from_dict(cls, data: dict):
         slot = FlowSlot.from_dict(data["slot"])
         prompt = data.get("prompt")
@@ -117,7 +118,7 @@ class CallFlow(Action):
 
     flow_name: str
 
-    @staticmethod
+    @classmethod
     def from_dict(cls, data: dict):
         return CallFlow(flow_name=data["flow_name"])
 
@@ -135,7 +136,7 @@ class Reply(Action):
 
     message: str
 
-    @staticmethod
+    @classmethod
     def from_dict(cls, data: dict):
         return Reply(message=data["message"])
 
@@ -151,7 +152,7 @@ class Reply(Action):
 @dataclass(frozen=True)
 class End(Action):
 
-    @staticmethod
+    @classmethod
     def from_dict(cls, data: dict):
         return End()
 

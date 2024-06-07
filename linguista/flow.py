@@ -21,17 +21,23 @@ class FlowSlot:
     type: Union[Type, Categorical]
     ask_before_filling: bool = True
 
+    def __post_init__(self):
+        valid_types = [int, float, bool, str]
+        assert isinstance(self.type, Categorical) or self.type in valid_types, f"Invalid slot type: {self.type}"
+
     @staticmethod
     def from_dict(data: dict):
         if data["type"]["type"] == "categorical":
             slot_type = Categorical(data["type"]["categories"])
         else:
             slot_type_name_to_type = {
-                "number": int,
-                "boolean": bool,
+                "int": int,
+                "float": float,
+                "bool": bool,
                 "str": str
             }
-            slot_type = slot_type_name_to_type[data["type"]]
+            assert data["type"]["type"] in slot_type_name_to_type, f"Invalid slot type: {data['type']['type']}"
+            slot_type = slot_type_name_to_type[data["type"]["type"]]
 
         return FlowSlot(
             name=data["name"],

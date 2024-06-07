@@ -3,7 +3,7 @@
 #   Bot
 #
 #
-
+import json
 import uuid
 import warnings
 from collections import deque
@@ -11,7 +11,7 @@ from dataclasses import asdict
 from typing import Optional, List, Type
 
 from . import default_flows
-from .actions import ActionFunction, Reply, Ask, ChainAction
+from .actions import ActionFunction, Reply, Ask, ChainAction, Action
 from .commands import render_prompt, parse_command_prompt_response, SetSlotCommand, StartFlowCommand
 from .enums import Role
 from .flow import Flow
@@ -42,10 +42,10 @@ def _listify_actions(actions):
 def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, session_id: str, current_flow: Optional[Flow] = None):
     yield from ()  # HACK: Convert to iterator, even if there's nothing to yield, i.e. no replies / ask
 
-    next_actions = tracker.get_current_actions(session_id)
-    next_actions = deque(next_actions)  # Convert to deque for efficient popping
+    next_actions_with_flows = tracker.get_current_actions(session_id)
+    next_actions_with_flows = deque(next_actions_with_flows)  # Convert to deque for efficient popping
 
-    print("Initial actions", next_actions)
+    print("Initial actions", next_actions_with_flows)
     print("Commands", commands)
 
     for command in commands:
@@ -57,41 +57,47 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
             if current_flow is None:
                 raise ValueError(f"Flow '{command.name}' not found.")
 
-            next_actions.appendleft((current_flow.start, current_flow))
+            next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
         else:
             raise ValueError(f"Invalid command: {command}")
 
-        while next_actions:
-            action, action_flow = next_actions.popleft()
+        while next_actions_with_flows:
+            action, action_flow_name = next_actions_with_flows.popleft()
 
             if isinstance(action, Reply):
                 yield action.message
             elif isinstance(action, Ask):
-                flow_slot_value = tracker.get_flow_slot(session_id, action_flow.name, action.slot.name)
+                flow_slot_value = tracker.get_flow_slot(session_id, action_flow_name, action.slot.name)
 
                 # If the slot value is not set, ask the user. Otherwise, skip the ask
                 if flow_slot_value is None:
-                    next_actions.appendleft((action, action_flow))
+                    next_actions_with_flows.appendleft((action, action_flow_name))
                     break  # We don't want to run the next actions until the user responds
                 else:
                     print("Skipping ask for slot", action.slot.name, "with value", flow_slot_value)
             elif isinstance(action, ActionFunction):
-                action_func_next_actions = action(action_flow)
+                action_flow = _find_flow_by_name(flows, action_flow_name)
+
+                if isinstance(action.function, str):
+                    # If the function is a string, replace the action with the actual function
+                    action = getattr(action_flow, action.function, None)
+
+                action_func_next_actions = action.function(action_flow)
                 action_func_next_actions = _listify_actions(action_func_next_actions)
                 action_func_next_actions = [(action, action_flow) for action in action_func_next_actions]
-                next_actions.extendleft(reversed(action_func_next_actions))  # Prepend the actions to the queue
+                next_actions_with_flows.extendleft(reversed(action_func_next_actions))  # Prepend the actions to the queue
             else:
                 raise ValueError(f"Invalid action: {action}")
 
     # If there are any pending asks, yield the prompt for the first one
-    following = next_actions[0] if next_actions else None
+    following = next_actions_with_flows[0] if next_actions_with_flows else None
 
     if following is None:
         tracker.delete_current_flow(session_id)
         tracker.delete_current_slot(session_id)
         tracker.delete_current_actions(session_id)
     else:
-        following_next_action, following_flow = following
+        following_next_action, following_flow_name = following
 
         if isinstance(following_next_action, Ask):
             yield following_next_action.prompt
@@ -99,13 +105,8 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
         else:
             tracker.delete_current_slot(session_id)
 
-        tracker.set_current_flow(session_id, following_flow.name)
-        tracker.save_current_actions(session_id, next_actions)
-
-    print("Next actions", next_actions)
-
-    for action, flow in next_actions:
-        print(asdict(action))
+        tracker.set_current_flow(session_id, following_flow_name)
+        tracker.save_current_actions(session_id, next_actions_with_flows)
 
 
 class Bot:

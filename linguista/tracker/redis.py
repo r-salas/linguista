@@ -5,7 +5,7 @@
 #
 
 import json
-from typing import Optional
+from typing import Optional, Sequence, Tuple
 
 from .base import Tracker
 from ..enums import Role
@@ -134,15 +134,22 @@ class RedisTracker(Tracker):
         current_slot_key = _get_redis_current_slot_key(session_id)
         self._client.delete(current_slot_key)
 
-    def save_current_actions(self, session_id: str, actions):
+    def save_current_actions(self, session_id: str, actions_with_flows: Sequence[Tuple["Action", str]]):
         current_actions_key = _get_redis_current_actions_key(session_id)
-        ...
 
-    def get_current_actions(self, session_id: str):
+        to_save = [(action.to_dict(), flow) for action, flow in actions_with_flows]
+        self._client.set(current_actions_key, json.dumps(to_save))
+
+    def get_current_actions(self, session_id: str) -> Sequence[Tuple["Action", str]]:
         current_actions_key = _get_redis_current_actions_key(session_id)
         current_actions_json_str = self._client.get(current_actions_key)
 
-        return []
+        if current_actions_json_str is None:
+            return []
+
+        from ..actions import Action
+
+        return [(Action.from_dict(action_dict), flow) for action_dict, flow in json.loads(current_actions_json_str)]
 
     def delete_current_actions(self, session_id: str):
         current_actions_key = _get_redis_current_actions_key(session_id)
