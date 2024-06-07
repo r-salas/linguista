@@ -7,6 +7,7 @@
 import uuid
 import warnings
 from collections import deque
+from dataclasses import asdict
 from typing import Optional, List, Type
 
 from . import default_flows
@@ -38,15 +39,14 @@ def _listify_actions(actions):
         return [actions]
 
 
-def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, session_id: str):
+def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, session_id: str, current_flow: Optional[Flow] = None):
     yield from ()  # HACK: Convert to iterator, even if there's nothing to yield, i.e. no replies / ask
-
-    current_flow = tracker.get_current_flow(session_id)
 
     next_actions = tracker.get_current_actions(session_id)
     next_actions = deque(next_actions)  # Convert to deque for efficient popping
 
-    print(commands)
+    print("Initial actions", next_actions)
+    print("Commands", commands)
 
     for command in commands:
         if isinstance(command, SetSlotCommand):
@@ -73,8 +73,10 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
                 if flow_slot_value is None:
                     next_actions.appendleft((action, action_flow))
                     break  # We don't want to run the next actions until the user responds
+                else:
+                    print("Skipping ask for slot", action.slot.name, "with value", flow_slot_value)
             elif isinstance(action, ActionFunction):
-                action_func_next_actions = action()
+                action_func_next_actions = action(action_flow)
                 action_func_next_actions = _listify_actions(action_func_next_actions)
                 action_func_next_actions = [(action, action_flow) for action in action_func_next_actions]
                 next_actions.extendleft(reversed(action_func_next_actions))  # Prepend the actions to the queue
@@ -99,6 +101,11 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
 
         tracker.set_current_flow(session_id, following_flow.name)
         tracker.save_current_actions(session_id, next_actions)
+
+    print("Next actions", next_actions)
+
+    for action, flow in next_actions:
+        print(asdict(action))
 
 
 class Bot:
@@ -147,10 +154,16 @@ class Bot:
 
         # self.tracker.add_message_to_conversation(self.session.id, Role.USER, message)
 
-        print(current_conversation)
+        print("Current conversation", current_conversation)
 
-        current_flow = self.tracker.get_current_flow(self.session.id)
-        current_slot = self.tracker.get_current_slot(self.session.id)
+        current_flow_name = self.tracker.get_current_flow(self.session.id)
+        current_slot_name = self.tracker.get_current_slot(self.session.id)
+
+        current_flow = _find_flow_by_name(self.flows, current_flow_name)
+        current_slot = None if current_flow is None else current_flow.get_slot(current_slot_name)
+
+        current_flow = None
+        current_slot = None
 
         prompt = render_prompt(
             available_flows=self.flows,
@@ -177,7 +190,7 @@ class Bot:
 
         def response_generator():
             for bot_response in _run_commands(commands=command_list, flows=self.flows, tracker=self.tracker,
-                                              session_id=self.session.id):
+                                              session_id=self.session.id, current_flow=current_flow):
                 yield bot_response
                 # self.tracker.add_message_to_conversation(self.session.id, Role.ASSISTANT, response)
 

@@ -6,23 +6,19 @@
 
 import os
 import re
-from collections import deque
 from typing import Sequence, List, Dict, Optional
 
 import jinja2
 
-from ..actions import ChainAction, Reply, Ask, ActionFunction
-from ..flow import Flow, FlowSlot
-from ..tracker import Tracker
-from ..types import Categorical
-from .chitchat import ChitChatCommand
-from .set_slot import SetSlotCommand
-from .start_flow import StartFlowCommand
 from .cancel_flow import CancelFlowCommand
-from .skip_question import SkipQuestionCommand
-from .human_handoff import HumanHandoffCommand
+from .chitchat import ChitChatCommand
 from .clarify import ClarifyCommand
-
+from .human_handoff import HumanHandoffCommand
+from .set_slot import SetSlotCommand
+from .skip_question import SkipQuestionCommand
+from .start_flow import StartFlowCommand
+from ..flow import Flow, FlowSlot
+from ..types import Categorical
 
 current_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -122,14 +118,14 @@ def parse_command_prompt_response(response: str):
 
             # error case where the llm tries to start a flow using a slot set
             if slot_name == "flow_name":
-                commands.append(StartFlowCommand(slot_value))   # FIXME: check if flows are valid
+                commands.append(StartFlowCommand(slot_value))  # FIXME: check if flows are valid
             else:
                 commands.append(
                     SetSlotCommand(name=slot_name, value=slot_value)
                 )
         elif match := start_flow_re.search(action):
             flow_name = match.group(1).strip()
-            commands.append(StartFlowCommand(flow_name))   # FIXME: check if flows are valid
+            commands.append(StartFlowCommand(flow_name))  # FIXME: check if flows are valid
         elif cancel_flow_re.search(action):
             commands.append(CancelFlowCommand())
         elif chitchat_re.search(action):

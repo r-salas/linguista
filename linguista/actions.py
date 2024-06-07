@@ -5,8 +5,10 @@
 #
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Optional, Sequence, List
+
+import dacite
 
 from .flow import FlowSlot
 
@@ -18,14 +20,26 @@ def action(func):
     return ActionFunction(func)
 
 
-@dataclass
-class Action(ABC):
+@dataclass(frozen=True)
+class Action:
+
+    @staticmethod
+    def from_dict(cls, data: dict):
+        action_subclasses = cls.__subclasses__()
+        action_cls = next((action_cls for action_cls in action_subclasses if action_cls.__name__ == data["type"]), None)
+
+        if action_cls is None:
+            raise ValueError(f"Invalid action type: {data['type']}")
+
+        action = action_cls.from_dict(data["action"])
+
+        return action
 
     def __rshift__(self, other):
         return ChainAction([self, other])
 
 
-@dataclass
+@dataclass(frozen=True)
 class ChainAction(Action):
 
     actions: List[Action]
@@ -39,41 +53,110 @@ class ChainAction(Action):
             else:
                 new_actions.append(action_instance)
 
-        self.actions = new_actions
+        object.__setattr__(self, 'actions', new_actions)
 
     def __rshift__(self, other):
         return ChainAction(self.actions + [other])
 
+    @staticmethod
+    def from_dict(cls, data: dict):
+        raise NotImplementedError()
 
-@dataclass
+    def to_dict(self):
+        raise NotImplementedError()
+
+
+@dataclass(frozen=True)
 class ActionFunction(Action):
 
     func: callable
 
+    @classmethod
+    def from_dict(cls, data: dict):
+        ...  # FIXME: Implement this
+
     def __call__(self, *args, **kwargs):
-        flow = self.func.__self__
-        return self.func(flow, *args, **kwargs)
+        return self.func(*args, **kwargs)
+
+    def to_dict(self):
+        return {
+            "type": self.__class__.__name__,
+            "action": {
+                "func": {
+                    "name": self.func.__name__
+                }
+            }
+        }
 
 
-@dataclass
+@dataclass(frozen=True)
 class Ask(Action):
 
     slot: FlowSlot
     prompt: Optional[str] = None
 
+    @staticmethod
+    def from_dict(cls, data: dict):
+        slot = FlowSlot.from_dict(data["slot"])
+        prompt = data.get("prompt")
 
-@dataclass
+        return Ask(slot=slot, prompt=prompt)
+
+    def to_dict(self):
+        return {
+            "type": self.__class__.__name__,
+            "action": {
+                "slot": self.slot.to_dict(),
+                "prompt": self.prompt
+            }
+        }
+
+
+@dataclass(frozen=True)
 class CallFlow(Action):
 
     flow_name: str
 
+    @staticmethod
+    def from_dict(cls, data: dict):
+        return CallFlow(flow_name=data["flow_name"])
 
-@dataclass
+    def to_dict(self):
+        return {
+            "type": self.__class__.__name__,
+            "action": {
+                "flow_name": self.flow_name
+            }
+        }
+
+
+@dataclass(frozen=True)
 class Reply(Action):
 
     message: str
 
+    @staticmethod
+    def from_dict(cls, data: dict):
+        return Reply(message=data["message"])
 
-@dataclass
+    def to_dict(self):
+        return {
+            "type": self.__class__.__name__,
+            "action": {
+                "message": self.message
+            }
+        }
+
+
+@dataclass(frozen=True)
 class End(Action):
-    pass
+
+    @staticmethod
+    def from_dict(cls, data: dict):
+        return End()
+
+    def to_dict(self):
+        return {
+            "type": self.__class__.__name__,
+            "action": {}
+        }

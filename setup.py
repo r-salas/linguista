@@ -31,12 +31,13 @@ setup(
         'License :: OSI Approved :: MIT License',
         'Operating System :: OS Independent',
     ],
-    python_requires='>=3.9',
+    python_requires='>=3.7',
     setup_requires=[
         "setuptools"
     ],
     install_requires=[
         "Jinja2",
+        "dacite"
     ],
     extras_require={
         "openai": ["openai>=1.0.0"],

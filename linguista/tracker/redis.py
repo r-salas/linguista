@@ -5,12 +5,10 @@
 #
 
 import json
-from typing import Optional, List, Tuple, Sequence
+from typing import Optional
 
-from .. import Flow
-from ..actions import Action
-from ..enums import Role
 from .base import Tracker
+from ..enums import Role
 
 try:
     import redis
@@ -136,11 +134,11 @@ class RedisTracker(Tracker):
         current_slot_key = _get_redis_current_slot_key(session_id)
         self._client.delete(current_slot_key)
 
-    def save_current_actions(self, session_id: str, actions: Sequence[Tuple[Action, Flow]]):
+    def save_current_actions(self, session_id: str, actions):
         current_actions_key = _get_redis_current_actions_key(session_id)
         ...
 
-    def get_current_actions(self, session_id: str) -> Sequence[Tuple[Action, Flow]]:
+    def get_current_actions(self, session_id: str):
         current_actions_key = _get_redis_current_actions_key(session_id)
         current_actions_json_str = self._client.get(current_actions_key)
 
