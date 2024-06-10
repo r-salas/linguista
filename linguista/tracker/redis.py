@@ -9,6 +9,7 @@ from typing import Optional, Sequence, Tuple
 
 from .base import Tracker
 from ..enums import Role
+from ..actions import Action
 
 try:
     import redis
@@ -100,6 +101,10 @@ class RedisTracker(Tracker):
         slots_key = _get_redis_flow_slots_key(session_id, flow_name)
         self._client.hdel(slots_key, slot_name)
 
+    def delete_flow_slots(self, session_id: str, flow_name: str):
+        slots_key = _get_redis_flow_slots_key(session_id, flow_name)
+        self._client.delete(slots_key)
+
     def set_current_flow(self, session_id: str, flow_name: str):
         current_flow_key = _get_redis_current_flow_key(session_id)
         self._client.set(current_flow_key, flow_name)
@@ -146,8 +151,6 @@ class RedisTracker(Tracker):
 
         if current_actions_json_str is None:
             return []
-
-        from ..actions import Action
 
         return [(Action.from_dict(action_dict), flow) for action_dict, flow in json.loads(current_actions_json_str)]
 

@@ -4,11 +4,10 @@
 #
 #
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, asdict
-from typing import Optional, Sequence, List, Union
+from dataclasses import dataclass
+from typing import Optional, List, Union
 
-from .flow import FlowSlot
+from .flow_slot import FlowSlot
 
 
 def action(func):
@@ -42,7 +41,6 @@ class Action:
 
 @dataclass(frozen=True)
 class ChainAction(Action):
-
     actions: List[Action]
 
     def __post_init__(self):
@@ -69,8 +67,7 @@ class ChainAction(Action):
 
 @dataclass(frozen=True)
 class ActionFunction(Action):
-
-    function: Union[str, callable]   # it may be a string with the function name
+    function: Union[str, callable]  # it may be a string with the function name
 
     @classmethod
     def from_dict(cls, data: dict):
@@ -92,7 +89,6 @@ class ActionFunction(Action):
 
 @dataclass(frozen=True)
 class Ask(Action):
-
     slot: FlowSlot
     prompt: Optional[str] = None
 
@@ -115,7 +111,6 @@ class Ask(Action):
 
 @dataclass(frozen=True)
 class CallFlow(Action):
-
     flow_name: str
 
     @classmethod
@@ -133,7 +128,6 @@ class CallFlow(Action):
 
 @dataclass(frozen=True)
 class Reply(Action):
-
     message: str
 
     @classmethod

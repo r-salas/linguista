@@ -87,10 +87,10 @@ class TransferMoneyFlow(linguista.Flow):
 bot = linguista.Bot(
     session_id="test-session",
     flows=[
-        TransferMoneyFlow
+        TransferMoneyFlow()
     ]
 )
 
-response_stream = bot.message("I want to transfer 50€ to Enrique", stream=True)
+response_stream = bot.message("Yes", stream=True)
 for response in response_stream:
     print(response)

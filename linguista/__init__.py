@@ -4,11 +4,10 @@
 #
 #
 
-from . import types
 from .bot import Bot
-from . import actions
 from .actions import action
-from .flow import Flow, FlowSlot
+from .flow import Flow
+from .flow_slot import FlowSlot
 
 __version__ = '0.1.0'
 

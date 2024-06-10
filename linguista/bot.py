@@ -73,8 +73,6 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
                 if flow_slot_value is None:
                     next_actions_with_flows.appendleft((action, action_flow_name))
                     break  # We don't want to run the next actions until the user responds
-                else:
-                    print("Skipping ask for slot", action.slot.name, "with value", flow_slot_value)
             elif isinstance(action, ActionFunction):
                 action_flow = _find_flow_by_name(flows, action_flow_name)
 
@@ -84,7 +82,7 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
 
                 action_func_next_actions = action.function(action_flow)
                 action_func_next_actions = _listify_actions(action_func_next_actions)
-                action_func_next_actions = [(action, action_flow) for action in action_func_next_actions]
+                action_func_next_actions = [(action, action_flow.name) for action in action_func_next_actions]
                 next_actions_with_flows.extendleft(reversed(action_func_next_actions))  # Prepend the actions to the queue
             else:
                 raise ValueError(f"Invalid action: {action}")
@@ -96,6 +94,7 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
         tracker.delete_current_flow(session_id)
         tracker.delete_current_slot(session_id)
         tracker.delete_current_actions(session_id)
+        #  tracker.delete_flow_slots(session_id)  # Delete all flow slots
     else:
         following_next_action, following_flow_name = following
 
@@ -112,14 +111,14 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
 class Bot:
 
     def __init__(self, session_id: Optional[str] = None, tracker: Optional[Tracker] = None, model: Optional[LLM] = None,
-                 flows: Optional[List[Type[Flow]]] = None):
+                 flows: Optional[List[Flow]] = None):
         if session_id is None:
             session_id = str(uuid.uuid4())
 
         if flows is None:
             flows = []
 
-        assert [issubclass(flow, Flow) for flow in flows], "All flows must be subclasses of Flow."
+        assert [isinstance(flow, Flow) for flow in flows], "All flows must be subclasses of Flow."
 
         if tracker is None:
             tracker = RedisTracker()
@@ -130,11 +129,10 @@ class Bot:
         self.tracker = tracker
         self.model = model
         self.session = Session(session_id, tracker)
-        self.flows = [flow_cls(tracker, session_id) for flow_cls in flows]
+        self.flows = flows
 
-    def add_flow(self, flow: Type[Flow]):
-        flow_instance = flow(self.tracker, self.session.id)
-        self.flows.append(flow_instance)
+    def add_flow(self, flow: Flow):
+        self.flows.append(flow)
 
     def message(self, message, stream=False):
         """
@@ -153,7 +151,7 @@ class Bot:
 
         current_conversation = self.tracker.get_conversation(self.session.id)
 
-        # self.tracker.add_message_to_conversation(self.session.id, Role.USER, message)
+        self.tracker.add_message_to_conversation(self.session.id, Role.USER, message)
 
         print("Current conversation", current_conversation)
 
@@ -163,8 +161,8 @@ class Bot:
         current_flow = _find_flow_by_name(self.flows, current_flow_name)
         current_slot = None if current_flow is None else current_flow.get_slot(current_slot_name)
 
-        current_flow = None
-        current_slot = None
+        print("Current flow", current_flow)
+        print("Current slot", current_slot)
 
         prompt = render_prompt(
             available_flows=self.flows,
@@ -193,7 +191,7 @@ class Bot:
             for bot_response in _run_commands(commands=command_list, flows=self.flows, tracker=self.tracker,
                                               session_id=self.session.id, current_flow=current_flow):
                 yield bot_response
-                # self.tracker.add_message_to_conversation(self.session.id, Role.ASSISTANT, response)
+                self.tracker.add_message_to_conversation(self.session.id, Role.ASSISTANT, response)
 
         if stream:
             return response_generator()

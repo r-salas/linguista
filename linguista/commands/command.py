@@ -17,7 +17,8 @@ from .human_handoff import HumanHandoffCommand
 from .set_slot import SetSlotCommand
 from .skip_question import SkipQuestionCommand
 from .start_flow import StartFlowCommand
-from ..flow import Flow, FlowSlot
+from ..flow import Flow
+from ..flow_slot import FlowSlot
 from ..types import Categorical
 
 current_dir = os.path.dirname(os.path.realpath(__file__))
@@ -60,14 +61,14 @@ def render_prompt(available_flows: Sequence[Flow], current_flow: Optional[Flow],
     available_flows = [flow_to_dict(flow) for flow in available_flows]
 
     role_to_str = {
-        "user": "USER",
-        "assistant": "AI"
+        "USER": "USER",
+        "ASSISTANT": "AI"
     }
 
     last_n_messages = 20  # FIXME: make it configurable
 
     user_str = f"USER: {latest_user_message}"
-    current_conversation_str = "\n".join([f"{role_to_str[message['role']]}: {message['content']}"
+    current_conversation_str = "\n".join([f"{role_to_str[message['role']]}: {message['message']}"
                                           for message in current_conversation[-last_n_messages:]] + [user_str])
 
     if current_flow is None:
