@@ -6,7 +6,6 @@
 
 import linguista
 
-from linguista import Bot, FlowSlot
 from linguista.actions import Ask, Reply
 
 

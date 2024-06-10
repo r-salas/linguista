@@ -101,43 +101,13 @@ class RedisTracker(Tracker):
         slots_key = _get_redis_flow_slots_key(session_id, flow_name)
         self._client.hdel(slots_key, slot_name)
 
-    def delete_flow_slots(self, session_id: str, flow_name: str):
-        slots_key = _get_redis_flow_slots_key(session_id, flow_name)
-        self._client.delete(slots_key)
+    def delete_flow_slots(self, session_id: str):
+        slots_key = _get_redis_flow_slots_key(session_id, "*")
 
-    def set_current_flow(self, session_id: str, flow_name: str):
-        current_flow_key = _get_redis_current_flow_key(session_id)
-        self._client.set(current_flow_key, flow_name)
-
-    def get_current_flow(self, session_id: str) -> Optional[str]:
-        current_flow_key = _get_redis_current_flow_key(session_id)
-        current_flow = self._client.get(current_flow_key)
-
-        if current_flow is None:
-            return None
-
-        return current_flow.decode()
-
-    def delete_current_flow(self, session_id: str):
-        current_flow_key = _get_redis_current_flow_key(session_id)
-        self._client.delete(current_flow_key)
-
-    def set_current_slot(self, session_id: str, slot_name: str):
-        current_slot_key = _get_redis_current_slot_key(session_id)
-        self._client.set(current_slot_key, slot_name)
-
-    def get_current_slot(self, session_id: str) -> Optional[str]:
-        current_slot_key = _get_redis_current_slot_key(session_id)
-        current_slot = self._client.get(current_slot_key)
-
-        if current_slot is None:
-            return None
-
-        return current_slot.decode()
-
-    def delete_current_slot(self, session_id: str):
-        current_slot_key = _get_redis_current_slot_key(session_id)
-        self._client.delete(current_slot_key)
+        pipe = self._client.pipeline()
+        for key in self._client.scan_iter(slots_key):
+            pipe.delete(key)
+        pipe.execute()
 
     def save_current_actions(self, session_id: str, actions_with_flows: Sequence[Tuple["Action", str]]):
         current_actions_key = _get_redis_current_actions_key(session_id)

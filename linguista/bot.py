@@ -25,7 +25,10 @@ def assert_is_action(action):
 
 
 def _find_internal_flow(flows, internal_flow_type):
-    return next((flow for flow in flows if isinstance(flow, internal_flow_type)), None)
+    internal_flow_overriden = next((flow for flow in flows if isinstance(flow, internal_flow_type)), None)
+    if internal_flow_overriden is None:
+        internal_flow_overriden = internal_flow_type()
+    return internal_flow_overriden
 
 
 def _find_flow_by_name(flows, name):
@@ -87,24 +90,18 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
             else:
                 raise ValueError(f"Invalid action: {action}")
 
-    # If there are any pending asks, yield the prompt for the first one
     following = next_actions_with_flows[0] if next_actions_with_flows else None
 
     if following is None:
-        tracker.delete_current_flow(session_id)
-        tracker.delete_current_slot(session_id)
         tracker.delete_current_actions(session_id)
-        #  tracker.delete_flow_slots(session_id)  # Delete all flow slots
+        tracker.delete_flow_slots(session_id)  # Delete all flow slots
     else:
         following_next_action, following_flow_name = following
 
+        # If there are any pending asks, yield the prompt for the first one
         if isinstance(following_next_action, Ask):
             yield following_next_action.prompt
-            tracker.set_current_slot(session_id, following_next_action.slot.name)
-        else:
-            tracker.delete_current_slot(session_id)
 
-        tracker.set_current_flow(session_id, following_flow_name)
         tracker.save_current_actions(session_id, next_actions_with_flows)
 
 
@@ -155,11 +152,17 @@ class Bot:
 
         print("Current conversation", current_conversation)
 
-        current_flow_name = self.tracker.get_current_flow(self.session.id)
-        current_slot_name = self.tracker.get_current_slot(self.session.id)
+        current_actions = self.tracker.get_current_actions(self.session.id)
 
-        current_flow = _find_flow_by_name(self.flows, current_flow_name)
-        current_slot = None if current_flow is None else current_flow.get_slot(current_slot_name)
+        current_flow = None
+        current_slot = None
+
+        if len(current_actions) > 0:
+            following_action, following_flow_name = current_actions[0]
+
+            current_flow = _find_flow_by_name(self.flows, following_flow_name)
+            if isinstance(following_action, Ask):
+                current_slot = current_flow.get_slot(following_action.slot.name)
 
         print("Current flow", current_flow)
         print("Current slot", current_slot)
@@ -176,6 +179,8 @@ class Bot:
 
         command_list = parse_command_prompt_response(response)
 
+        # TODO: Get internal flows from flows and remove them from the list
+
         chitchat_flow = _find_internal_flow(self.flows, default_flows.Chitchat)
         cancel_flow = _find_internal_flow(self.flows, default_flows.CancelFlow)
         clarify_flow = _find_internal_flow(self.flows, default_flows.Clarify)
@@ -191,7 +196,7 @@ class Bot:
             for bot_response in _run_commands(commands=command_list, flows=self.flows, tracker=self.tracker,
                                               session_id=self.session.id, current_flow=current_flow):
                 yield bot_response
-                self.tracker.add_message_to_conversation(self.session.id, Role.ASSISTANT, response)
+                self.tracker.add_message_to_conversation(self.session.id, Role.ASSISTANT, bot_response)
 
         if stream:
             return response_generator()
