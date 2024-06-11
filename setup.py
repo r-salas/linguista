@@ -37,6 +37,7 @@ setup(
     ],
     install_requires=[
         "Jinja2",
+        "rich"
     ],
     extras_require={
         "openai": ["openai>=1.0.0"],

@@ -3,6 +3,7 @@
 #   Bot
 #
 #
+
 import json
 import uuid
 import warnings
@@ -11,13 +12,15 @@ from dataclasses import asdict
 from typing import Optional, List, Type
 
 from . import default_flows
-from .actions import ActionFunction, Reply, Ask, ChainAction, Action
-from .commands import render_prompt, parse_command_prompt_response, SetSlotCommand, StartFlowCommand
+from .actions import ActionFunction, Reply, Ask, ChainAction, Action, End
+from .commands import render_prompt, parse_command_prompt_response, SetSlotCommand, StartFlowCommand, CancelFlowCommand, \
+    ChitChatCommand, ClarifyCommand, RepeatCommand, SkipQuestionCommand
 from .enums import Role
 from .flow import Flow
 from .llm import LLM, OpenAI
 from .session import Session
 from .tracker import Tracker, RedisTracker
+from .utils import debug
 
 
 def assert_is_action(action):
@@ -42,14 +45,15 @@ def _listify_actions(actions):
         return [actions]
 
 
-def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, session_id: str, current_flow: Optional[Flow] = None):
+def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, session_id: str,
+                  current_flow: Optional[Flow] = None):
     yield from ()  # HACK: Convert to iterator, even if there's nothing to yield, i.e. no replies / ask
 
     next_actions_with_flows = tracker.get_current_actions(session_id)
     next_actions_with_flows = deque(next_actions_with_flows)  # Convert to deque for efficient popping
 
-    print("Initial actions", next_actions_with_flows)
-    print("Commands", commands)
+    debug("Initial actions", next_actions_with_flows)
+    debug("Commands", commands)
 
     for command in commands:
         if isinstance(command, SetSlotCommand):
@@ -86,9 +90,10 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
                 action_func_next_actions = action.function(action_flow)
                 action_func_next_actions = _listify_actions(action_func_next_actions)
                 action_func_next_actions = [(action, action_flow.name) for action in action_func_next_actions]
-                next_actions_with_flows.extendleft(reversed(action_func_next_actions))  # Prepend the actions to the queue
+                next_actions_with_flows.extendleft(reversed(action_func_next_actions))  # Prepend actions to queue
             else:
-                raise ValueError(f"Invalid action: {action}")
+                warnings.warn(f"Unknow action: {action}")
+                # raise ValueError(f"Invalid action: {action}")
 
     following = next_actions_with_flows[0] if next_actions_with_flows else None
 
@@ -107,8 +112,8 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
 
 class Bot:
 
-    def __init__(self, session_id: Optional[str] = None, tracker: Optional[Tracker] = None, model: Optional[LLM] = None,
-                 flows: Optional[List[Flow]] = None):
+    def __init__(self, session_id: Optional[str] = None, tracker: Optional[Tracker] = None,
+                 model: Optional[LLM] = None, flows: Optional[List[Flow]] = None):
         if session_id is None:
             session_id = str(uuid.uuid4())
 
@@ -150,7 +155,7 @@ class Bot:
 
         self.tracker.add_message_to_conversation(self.session.id, Role.USER, message)
 
-        print("Current conversation", current_conversation)
+        debug("Current conversation", current_conversation)
 
         current_actions = self.tracker.get_current_actions(self.session.id)
 
@@ -164,8 +169,8 @@ class Bot:
             if isinstance(following_action, Ask):
                 current_slot = current_flow.get_slot(following_action.slot.name)
 
-        print("Current flow", current_flow)
-        print("Current slot", current_slot)
+        debug("Current flow", current_flow.name if current_flow else None)
+        debug("Current slot", current_slot.name if current_slot else None)
 
         prompt = render_prompt(
             available_flows=self.flows,
@@ -180,17 +185,6 @@ class Bot:
         command_list = parse_command_prompt_response(response)
 
         # TODO: Get internal flows from flows and remove them from the list
-
-        chitchat_flow = _find_internal_flow(self.flows, default_flows.Chitchat)
-        cancel_flow = _find_internal_flow(self.flows, default_flows.CancelFlow)
-        clarify_flow = _find_internal_flow(self.flows, default_flows.Clarify)
-        human_handoff_flow = _find_internal_flow(self.flows, default_flows.HumanHandoff)
-        cannot_handle_flow = _find_internal_flow(self.flows, default_flows.CannotHandle)
-        completed_flow = _find_internal_flow(self.flows, default_flows.Completed)
-        continue_interrupted_flow = _find_internal_flow(self.flows, default_flows.ContinueInterrupted)
-        internal_error_flow = _find_internal_flow(self.flows, default_flows.InternalError)
-        correction_flow = _find_internal_flow(self.flows, default_flows.Correction)
-        skip_question_flow = _find_internal_flow(self.flows, default_flows.SkipQuestion)
 
         def response_generator():
             for bot_response in _run_commands(commands=command_list, flows=self.flows, tracker=self.tracker,

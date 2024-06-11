@@ -14,26 +14,27 @@ Here is what happened previously in the conversation:
 
 ===
 {% if current_flow != None %}
-You are currently in the flow "{{ current_flow }}".
-You have just asked the user for the slot "{{ current_slot }}"{% if current_slot_description %} ({{ current_slot_description }}){% endif %}.
+    You are currently in the flow "{{ current_flow }}".
+    You have just asked the user for the slot "{{ current_slot }}"{% if current_slot_description %} ({{ current_slot_description }}){% endif %}.
 
-{% if current_flow_slots|length > 0 %}
-Here are the slots of the currently active flow:
-{% for slot in current_flow_slots -%}
-- name: {{ slot.name }}, value: {{ slot.value }}, type: {{ slot.type }}, description: {{ slot.description}}{% if slot.allowed_values %}, allowed values: {{ slot.allowed_values }}{% endif %}
-{% endfor %}
-{% endif %}
+    {% if current_flow_slots|length > 0 %}
+        Here are the slots of the currently active flow:
+        {% for slot in current_flow_slots -%}
+            - name: {{ slot.name }}, value: {{ slot.value }}, type: {{ slot.type }}, description: {{ slot.description}}{% if slot.allowed_values %}, allowed values: {{ slot.allowed_values }}{% endif %}
+        {% endfor %}
+    {% endif %}
 {% else %}
-You are currently not in any flow and so there are no active slots.
-This means you can only set a slot if you first start a flow that requires that slot.
+    You are currently not in any flow and so there are no active slots.
+    This means you can only set a slot if you first start a flow that requires that slot.
 {% endif %}
+
 If you start a flow, first start the flow and then optionally fill that flow's slots with information the user provided in their message.
 
 The user just said """{{ user_message }}""".
 
 ===
 Based on this information generate a list of actions you want to take. Your job is to start flows and to fill slots where appropriate. Any logic of what happens afterward  is handled by the flow engine. These are your available actions:
-* Slot setting, described by "SetSlot(slot_name, slot_value)". An example would be "SetSlot(recipient, Freddy)"
+* Slot setting, described by "SetSlot(slot_name, slot_value)". An example would be "SetSlot(recipient, Freddy)". If the user doesn't provide a value for a slot, don't include it.
 * Starting another flow, described by "StartFlow(flow_name)". An example would be "StartFlow(transfer_money)"
 * Cancelling the current flow, described by "CancelFlow()"
 * Repeating what the assistant just said, described by "Repeat()"

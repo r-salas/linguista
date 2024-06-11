@@ -33,13 +33,15 @@ def render_prompt(available_flows: Sequence[Flow], current_flow: Optional[Flow],
 
     def flow_slot_to_dict(flow_slot: FlowSlot):
         allowed_values = None
-        if isinstance(flow_slot.type, Categorical):
+        if flow_slot.type == bool:
+            slot_type = "boolean"
+            allowed_values = "true, false"
+        elif isinstance(flow_slot.type, Categorical):
             slot_type = "categorical"
             allowed_values = ", ".join(flow_slot.type.categories)
         else:
             slot_type = {
                 int: "number",
-                bool: "boolean",
                 str: "text",
                 float: "number",
             }[flow_slot.type]

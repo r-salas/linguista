@@ -3,6 +3,7 @@
 #
 #
 #
+import uuid
 
 import linguista
 
@@ -22,6 +23,13 @@ class TransferMoneyFlow(linguista.Flow):
         name="recipient-name",
         description="Recipient name",
         type=linguista.types.Categorical(["Alice", "Bob", "Charlie"])
+    )
+
+    email_invoice = linguista.FlowSlot(
+        name="email-invoice",
+        description="Send an invoice to the recipient",
+        type=bool,
+        ask_before_filling=False
     )
 
     transfer_confirmation = linguista.FlowSlot(
@@ -62,7 +70,13 @@ class TransferMoneyFlow(linguista.Flow):
     def ask_recipient(self):
         ask_recipient = linguista.actions.Ask(self.recipient, prompt="Who would you like to transfer to?")
 
-        return ask_recipient >> self.ask_confirmation
+        return ask_recipient >> self.ask_email_invoice
+
+    @linguista.action
+    def ask_email_invoice(self):
+        ask_email_invoice = Ask(self.email_invoice, prompt="Would you like to send an invoice to the recipient?")
+
+        return ask_email_invoice >> self.ask_confirmation
 
     @linguista.action
     def ask_confirmation(self):
@@ -83,13 +97,21 @@ class TransferMoneyFlow(linguista.Flow):
             return Reply("Transfer cancelled")
 
 
+session_id = str(uuid.uuid4())
+
 bot = linguista.Bot(
-    session_id="test-session",
+    session_id=session_id,
     flows=[
         TransferMoneyFlow()
     ]
 )
 
-response_stream = bot.message("Yes", stream=True)
-for response in response_stream:
-    print(response)
+try:
+    while True:
+        user_message = input(">>> ")
+        response_stream = bot.message(user_message, stream=True)
+
+        for response in response_stream:
+            print(response)
+except KeyboardInterrupt:
+    pass
