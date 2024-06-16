@@ -31,12 +31,17 @@ setup(
         'License :: OSI Approved :: MIT License',
         'Operating System :: OS Independent',
     ],
-    python_requires='>=3.9',
+    python_requires='>=3.7',
     setup_requires=[
         "setuptools"
     ],
     install_requires=[
         "Jinja2",
-        "openai>=1.0.0",
-    ]
+        "rich"
+    ],
+    extras_require={
+        "openai": ["openai>=1.0.0"],
+        "anthropic": ["anthropic"],
+        "redis": ["redis[hiredis]"],
+    }
 )

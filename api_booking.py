@@ -16,7 +16,6 @@ class TransferMoneyFlow(linguista.Flow):
     amount = linguista.FlowSlot(
         description="Amount of money to transfer",
         type=int,
-        required=True
     )
     recipient = linguista.FlowSlot(
         description="Recipient name",
@@ -32,10 +31,10 @@ class TransferMoneyFlow(linguista.Flow):
         bot.reply("Welcome to the money transfer service!")
         bot.reply("Please follow the instructions to complete the transfer.")
 
-        return linguista.chain(
-            bot.actions.ask(self.amount, prompt="How much money would you like to transfer?", id="ask-amount"),
-            self.validate_amount
-        )
+        ask_amount = linguista.actions.Ask(self.amount, prompt="How much money would you like to transfer?",
+                                           id="ask-amount")
+
+        return ask_amount >> self.validate_amount
 
     @linguista.action
     def validate_amount(self, bot: linguista.Bot, amount: int):
@@ -47,11 +46,13 @@ class TransferMoneyFlow(linguista.Flow):
 
     @linguista.action
     def ask_recipient(self, bot: linguista.Bot, amount: int):
-        return bot.actions.ask(self.recipient, prompt=f"Who would you like to transfer {amount}€ to?") >> self.ask_confirmation
+        return linguista.actions.Ask(self.recipient, prompt=f"Who would you like to transfer {amount}€ to?") >> self.ask_confirmation
 
     @linguista.action
     def ask_confirmation(self, bot: linguista.Bot, amount: int, recipient: str):
-        return linguista.actions.Ask(self.transfer_confirmation, prompt=f"Are you sure you want to transfer {amount}€ to {recipient}?") >> self.validate_confirmation
+        ask_action = linguista.actions.Ask(self.transfer_confirmation,
+                                           prompt=f"Are you sure you want to transfer {amount}€ to {recipient}?")
+        return ask_action >> self.validate_confirmation
 
     @linguista.action
     def validate_confirmation(self, bot: linguista.Bot, transfer_confirmation: bool, amount: int, recipient: str):
