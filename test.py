@@ -3,11 +3,69 @@
 #
 #
 #
+import os
 import uuid
 
 import linguista
 
-from linguista.actions import Ask, Reply
+from linguista.actions import Ask, Reply, CallFlow, End
+
+
+class CheckExpenseCurrentMonthFlow(linguista.Flow):
+
+    @property
+    def name(self):
+        return "check_expense_current_month"
+
+    @property
+    def description(self):
+        return "Check the expense of the current month"
+
+    @linguista.action
+    def start(self):
+        return Reply("Welcome to the expense checking service!") >> Reply("Please wait while we retrieve your expense...") >> self.check_expense_current_month
+
+    @linguista.action
+    def check_expense_current_month(self):
+        return Reply("Your expense for the current month is 500€")
+
+
+class GetAccountInfoFlow(linguista.Flow):
+
+    @property
+    def name(self):
+        return "get_account_info"
+
+    @property
+    def description(self):
+        return "Get account information"
+
+    @linguista.action
+    def start(self):
+        return Reply("Welcome to the account information service!") >> Reply("Please wait while we retrieve your account information...") >> CallFlow("check_balance") >> self.get_account_info
+
+    @linguista.action
+    def get_account_info(self):
+        return Reply("Your account number is 1234567890")
+
+
+class CheckBalanceFlow(linguista.Flow):
+
+    @property
+    def name(self):
+        return "check_balance"
+
+    @property
+    def description(self):
+        return "Check the balance of the account"
+
+    @linguista.action
+    def start(self):
+        return Reply("Welcome to the balance checking service!") >> Reply("Please wait while we retrieve your balance...") >> self.check_balance
+
+    @linguista.action
+    def check_balance(self):
+        return Reply("Your balance is 1000€")
 
 
 class TransferMoneyFlow(linguista.Flow):
@@ -58,8 +116,8 @@ class TransferMoneyFlow(linguista.Flow):
         return ask_amount >> self.validate_amount
 
     @linguista.action
-    def validate_amount(self):
-        amount = 50  # FIXME: Get the amount from the slot
+    def validate_amount(self, tracker: linguista.Tracker):
+        amount = tracker.get_slot(self.amount)
 
         if amount < 0:
             return Reply("Amount must be positive") >> self.ask_amount
@@ -79,17 +137,17 @@ class TransferMoneyFlow(linguista.Flow):
         return ask_email_invoice >> self.ask_confirmation
 
     @linguista.action
-    def ask_confirmation(self):
-        amount = 50   # FIXME: Get the amount from the slot
-        recipient = "Enrique"  # FIXME: Get the recipient from the slot
+    def ask_confirmation(self, tracker: linguista.Tracker):
+        amount = tracker.get_slot(self.amount)
+        recipient = tracker.get_slot(self.recipient)
 
         ask_confirmation = linguista.actions.Ask(self.transfer_confirmation, prompt=f"Are you sure you want to transfer {amount}€ to {recipient}?")
 
         return ask_confirmation >> self.validate_confirmation
 
     @linguista.action
-    def validate_confirmation(self):
-        transfer_confirmation = True  # FIXME: Get the confirmation from the slot
+    def validate_confirmation(self, tracker: linguista.Tracker):
+        transfer_confirmation = tracker.get_slot(self.transfer_confirmation)
 
         if transfer_confirmation:
             return Reply("Transfer completed")
@@ -102,8 +160,15 @@ session_id = str(uuid.uuid4())
 bot = linguista.Bot(
     session_id=session_id,
     flows=[
-        TransferMoneyFlow()
-    ]
+        TransferMoneyFlow(),
+        CheckBalanceFlow(),
+        GetAccountInfoFlow(),
+        CheckExpenseCurrentMonthFlow()
+    ],
+    model=linguista.OpenAI(
+        model="gpt-3.5-turbo",
+        api_key=os.environ["OPENAI_API_KEY"],
+    )
 )
 
 try:

@@ -5,12 +5,12 @@
 #
 
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Tuple
 
 
 @dataclass(init=False)
 class ClarifyCommand:
-    flows: Sequence[str]
+    flows: Tuple[str]
 
-    def __init__(self, *flows: Sequence[str]):
+    def __init__(self, *flows: Tuple[str]):
         self.flows = flows

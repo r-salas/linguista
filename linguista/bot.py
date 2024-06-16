@@ -3,42 +3,49 @@
 #   Bot
 #
 #
-
-import json
+import inspect
 import uuid
 import warnings
 from collections import deque
-from dataclasses import asdict
-from typing import Optional, List, Type
+from typing import Optional, List, Sequence, Any
 
-from . import default_flows
-from .actions import ActionFunction, Reply, Ask, ChainAction, Action, End
+from .actions import ActionFunction, Reply, Ask, ChainAction, Action, End, CallFlow
 from .commands import render_prompt, parse_command_prompt_response, SetSlotCommand, StartFlowCommand, CancelFlowCommand, \
-    ChitChatCommand, ClarifyCommand, RepeatCommand, SkipQuestionCommand
+    ChitChatCommand, ClarifyCommand, HumanHandoffCommand, RepeatCommand, SkipQuestionCommand
 from .enums import Role
 from .flow import Flow
 from .llm import LLM, OpenAI
 from .session import Session
-from .tracker import Tracker, RedisTracker
+from .tracker import Tracker, RedisTracker, ProxyTracker
 from .utils import debug
 
 
-def assert_is_action(action):
+def assert_is_action(action: Any):
+    """
+    Asserts that the action is an instance of ActionFunction.
+
+    """
     assert isinstance(action, ActionFunction), "Action must be an instance of ActionFunction."
 
 
-def _find_internal_flow(flows, internal_flow_type):
-    internal_flow_overriden = next((flow for flow in flows if isinstance(flow, internal_flow_type)), None)
-    if internal_flow_overriden is None:
-        internal_flow_overriden = internal_flow_type()
-    return internal_flow_overriden
-
-
-def _find_flow_by_name(flows, name):
+def _find_flow_by_name(flows: Sequence[Flow], name: str):
     return next((flow for flow in flows if flow.name == name), None)
 
 
-def _listify_actions(actions):
+def _listify_actions(actions: ChainAction | Action):
+    """
+    Convert the actions to a list of actions. If the actions is a ChainAction, return the actions. Otherwise, return a
+    list with the action.
+
+    Parameters
+    ----------
+    actions: ChainAction | Action
+        The actions to convert.
+    Returns
+    --------
+    List[Action]
+        A list of actions.
+    """
     if isinstance(actions, ChainAction):
         return actions.actions
     else:
@@ -47,8 +54,30 @@ def _listify_actions(actions):
 
 def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, session_id: str,
                   current_flow: Optional[Flow] = None):
+    """
+    This function processes a list of commands, updates the tracker and yields responses.
+
+    Parameters
+    ----------
+    commands: List
+        A list of commands to be processed.
+    flows: List[Flow]
+        A list of available flows.
+    tracker RedisTracker:
+        The tracker object to keep track of the state.
+    session_id str:
+        The session ID.
+    current_flow: Optional[Flow]
+        The current flow, defaults to None.
+
+    Yields
+    ------
+    str
+        The bot's response to the user.
+    """
     yield from ()  # HACK: Convert to iterator, even if there's nothing to yield, i.e. no replies / ask
 
+    # Load previous actions
     next_actions_with_flows = tracker.get_current_actions(session_id)
     next_actions_with_flows = deque(next_actions_with_flows)  # Convert to deque for efficient popping
 
@@ -65,6 +94,19 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
                 raise ValueError(f"Flow '{command.name}' not found.")
 
             next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+        elif isinstance(command, CancelFlowCommand):
+            next_actions_with_flows.appendleft((End(), current_flow.name))
+            next_actions_with_flows.appendleft((Reply("Ok, I will stop."), current_flow.name))  # FIXME: This is a hack
+        elif isinstance(command, ChitChatCommand):
+            next_actions_with_flows.appendleft((Reply("I'm a virtual assistant designed to help you with multiple tasks. How can I help you?"), current_flow.name))  # FIXME: This is a hack
+        elif isinstance(command, ClarifyCommand):
+            next_actions_with_flows.appendleft((Reply("I'm sorry, I didn't understand that. Can you please clarify what do you mean?"), current_flow.name))   # FIXME: This is a hack
+        elif isinstance(command, HumanHandoffCommand):
+            next_actions_with_flows.appendleft((Reply("Before transferring you to an agent, let's try to solve it together. What can I help you with?"), current_flow.name))   # FIXME: This is a hack
+        elif isinstance(command, RepeatCommand):
+            pass  # How can I do it? I must have a history of the conversation to repeat it
+        elif isinstance(command, SkipQuestionCommand):
+            next_actions_with_flows.appendleft((Reply("To assist you effectively, I need you to provide the information I requested."), current_flow.name))   # FIXME: This is a hack
         else:
             raise ValueError(f"Invalid command: {command}")
 
@@ -78,26 +120,45 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
 
                 # If the slot value is not set, ask the user. Otherwise, skip the ask
                 if flow_slot_value is None:
-                    next_actions_with_flows.appendleft((action, action_flow_name))
+                    next_actions_with_flows.appendleft((action, action_flow_name))  # Re-add the ask task to the queue
                     break  # We don't want to run the next actions until the user responds
             elif isinstance(action, ActionFunction):
                 action_flow = _find_flow_by_name(flows, action_flow_name)
 
+                # The function may be a string, usually because it's from tracker
                 if isinstance(action.function, str):
                     # If the function is a string, replace the action with the actual function
                     action = getattr(action_flow, action.function, None)
 
-                action_func_next_actions = action.function(action_flow)
+                # Dynamically inject the available parameters to the action function.
+                # If the action function doesn't need any of the parameters, they will be ignored.
+                available_params = {
+                    "tracker": ProxyTracker(tracker, session_id, action_flow)
+                }
+
+                action_func_signature = inspect.signature(action.function)
+                action_func_args_to_pass = {}
+                for param_name, param_value in action_func_signature.parameters.items():
+                    if param_name in available_params:
+                        action_func_args_to_pass[param_name] = available_params[param_name]
+
+                action_func_next_actions = action.function(action_flow, **action_func_args_to_pass)
+                # The action may return a single action or a list of actions
                 action_func_next_actions = _listify_actions(action_func_next_actions)
                 action_func_next_actions = [(action, action_flow.name) for action in action_func_next_actions]
                 next_actions_with_flows.extendleft(reversed(action_func_next_actions))  # Prepend actions to queue
+            elif isinstance(action, CallFlow):
+                flow = _find_flow_by_name(flows, action.flow_name)
+                next_actions_with_flows.appendleft((flow.start, flow.name))
+            elif isinstance(action, End):
+                # Remove all following actions for the current flow
+                next_actions_with_flows = deque(filter(lambda x: x[1] != action_flow_name, next_actions_with_flows))
             else:
-                warnings.warn(f"Unknow action: {action}")
-                # raise ValueError(f"Invalid action: {action}")
+                raise ValueError(f"Invalid action: {action}")
 
     following = next_actions_with_flows[0] if next_actions_with_flows else None
 
-    if following is None:
+    if following is None:  # no more actions to run
         tracker.delete_current_actions(session_id)
         tracker.delete_flow_slots(session_id)  # Delete all flow slots
     else:
@@ -149,7 +210,10 @@ class Bot:
         """
         if not self.flows:
             warnings.warn("No flows available. Please add flows to the bot.")
-            return iter(())   # Return an empty iterator
+            if stream:
+                return iter(())  # Return an empty iterator
+            else:
+                return []
 
         current_conversation = self.tracker.get_conversation(self.session.id)
 
@@ -183,8 +247,6 @@ class Bot:
         response = self.model(prompt)
 
         command_list = parse_command_prompt_response(response)
-
-        # TODO: Get internal flows from flows and remove them from the list
 
         def response_generator():
             for bot_response in _run_commands(commands=command_list, flows=self.flows, tracker=self.tracker,

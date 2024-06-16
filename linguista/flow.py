@@ -8,7 +8,6 @@ import inspect
 from abc import ABC, abstractmethod
 
 from .flow_slot import FlowSlot
-from .tracker import Tracker
 
 
 class Flow(ABC):

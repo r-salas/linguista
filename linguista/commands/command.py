@@ -121,14 +121,14 @@ def parse_command_prompt_response(response: str):
 
             # error case where the llm tries to start a flow using a slot set
             if slot_name == "flow_name":
-                commands.append(StartFlowCommand(slot_value))  # FIXME: check if flows are valid
+                commands.append(StartFlowCommand(slot_value))
             else:
                 commands.append(
                     SetSlotCommand(name=slot_name, value=slot_value)
                 )
         elif match := start_flow_re.search(action):
             flow_name = match.group(1).strip()
-            commands.append(StartFlowCommand(flow_name))  # FIXME: check if flows are valid
+            commands.append(StartFlowCommand(flow_name))
         elif cancel_flow_re.search(action):
             commands.append(CancelFlowCommand())
         elif chitchat_re.search(action):
@@ -140,6 +140,6 @@ def parse_command_prompt_response(response: str):
         elif match := clarify_re.search(action):
             options = sorted([opt.strip() for opt in match.group(1).split(",")])
             if len(options) >= 1:
-                commands.append(ClarifyCommand(options))  # FIXME: check if flows are valid
+                commands.append(ClarifyCommand(options))
 
     return commands
