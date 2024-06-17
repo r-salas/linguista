@@ -119,6 +119,8 @@ def parse_command_prompt_response(response: str):
             slot_name = match.group(1).strip()
             slot_value = match.group(2).strip("'\" ")
 
+            # FIXME: sometimes the model predicts a slot set command with the flow name
+
             # error case where the llm tries to start a flow using a slot set
             if slot_name == "flow_name":
                 commands.append(StartFlowCommand(slot_value))
