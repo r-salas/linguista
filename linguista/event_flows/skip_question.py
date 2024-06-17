@@ -5,18 +5,14 @@
 #
 
 from ..actions import Reply, action
-from ..flow import Flow
+from .base import EventFlow
 
 
-class SkipQuestion(Flow):
+class SkipQuestion(EventFlow):
 
-    @property
-    def name(self):
-        return "INTERNAL_SKIP_QUESTION"
+    name = "INTERNAL_SKIP_QUESTION"
 
-    @property
-    def description(self):
-        return "Skip question flow"
+    description = "Skip question flow"
 
     @action
     def start(self):

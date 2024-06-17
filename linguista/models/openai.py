@@ -32,6 +32,7 @@ class OpenAI(LLM):
             model=self.model,
             messages=[
                 {"role": "user", "content": prompt}
-            ]
+            ],
+            temperature=0
         )
         return completion.choices[0].message.content

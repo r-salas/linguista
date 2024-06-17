@@ -3,18 +3,22 @@
 #   Bot
 #
 #
+
 import inspect
 import uuid
 import warnings
 from collections import deque
-from typing import Optional, List, Sequence, Any
+from typing import Optional, List, Sequence, Any, Type, Dict
 
 from .actions import ActionFunction, Reply, Ask, ChainAction, Action, End, CallFlow
 from .commands import render_prompt, parse_command_prompt_response, SetSlotCommand, StartFlowCommand, CancelFlowCommand, \
     ChitChatCommand, ClarifyCommand, HumanHandoffCommand, RepeatCommand, SkipQuestionCommand
 from .enums import Role
+from .event_flows import CancelFlow, CannotHandle, ChitChat, Clarify, Completed, ContinueInterrupted, Correction, \
+    HumanHandoff, InternalError, SkipQuestion
+from .event_flows.base import EventFlow
 from .flow import Flow
-from .llm import LLM, OpenAI
+from .models import LLM, OpenAI
 from .session import Session
 from .tracker import Tracker, RedisTracker, ProxyTracker
 from .utils import debug
@@ -23,13 +27,28 @@ from .utils import debug
 def assert_is_action(action: Any):
     """
     Asserts that the action is an instance of ActionFunction.
-
     """
     assert isinstance(action, ActionFunction), "Action must be an instance of ActionFunction."
 
 
 def _find_flow_by_name(flows: Sequence[Flow], name: str):
+    """
+    Find a flow by its name.
+    """
     return next((flow for flow in flows if flow.name == name), None)
+
+
+def _find_internal_flow(flows: Sequence[Flow], internal_flow_cls: Type[Flow]):
+    """
+    Check if the user has overriden the default internal flow. If so, return the overriden flow. Otherwise, return the
+    default internal flow.
+    """
+    overriden_flow = next((flow for flow in flows if isinstance(flow, internal_flow_cls)), None)
+
+    if overriden_flow is not None:
+        return overriden_flow
+
+    return internal_flow_cls()
 
 
 def _listify_actions(actions: ChainAction | Action):
@@ -52,8 +71,8 @@ def _listify_actions(actions: ChainAction | Action):
         return [actions]
 
 
-def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, session_id: str,
-                  current_flow: Optional[Flow] = None):
+def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow], tracker: RedisTracker,
+                  session_id: str, current_flow: Optional[Flow] = None):
     """
     This function processes a list of commands, updates the tracker and yields responses.
 
@@ -63,6 +82,8 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
         A list of commands to be processed.
     flows: List[Flow]
         A list of available flows.
+    event_flows: Dict[str, Flow]
+        A dictionnary of flows by event name.
     tracker RedisTracker:
         The tracker object to keep track of the state.
     session_id str:
@@ -77,6 +98,8 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
     """
     yield from ()  # HACK: Convert to iterator, even if there's nothing to yield, i.e. no replies / ask
 
+    all_flows = flows + list(event_flows.values())
+
     # Load previous actions
     next_actions_with_flows = tracker.get_current_actions(session_id)
     next_actions_with_flows = deque(next_actions_with_flows)  # Convert to deque for efficient popping
@@ -84,29 +107,58 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
     debug("Initial actions", next_actions_with_flows)
     debug("Commands", commands)
 
+    # If there are no commands predicted, start the CannotHandle flow
+    if not commands:
+        current_flow = event_flows["cannot_handle"]
+        next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+
+        commands.append(None)  # Add a dummy command so the actions loop runs at least once
+
     for command in commands:
         if isinstance(command, SetSlotCommand):
-            tracker.set_flow_slot(session_id, current_flow.name, command.name, command.value)
+            if current_flow is None:
+                warnings.warn("No flow is currently active. Cannot set slot.")
+            else:
+                tracker.set_flow_slot(session_id, current_flow.name, command.name, command.value)
         elif isinstance(command, StartFlowCommand):
-            current_flow = _find_flow_by_name(flows, command.name)
+            if current_flow is None:
+                completed = event_flows["completed"]
+                next_actions_with_flows.appendleft((completed.start, completed.name))
+            else:
+                continue_interrupted = event_flows["continue_interrupted"]
+                next_actions_with_flows.appendleft((continue_interrupted.start, continue_interrupted.name))
+
+            current_flow = _find_flow_by_name(all_flows, command.name)
 
             if current_flow is None:
-                raise ValueError(f"Flow '{command.name}' not found.")
+                warnings.warn(f"Flow '{command.name}' not found.")
 
-            next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+                current_flow = event_flows["cannot_handle"]
+                next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+            else:
+                next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
         elif isinstance(command, CancelFlowCommand):
+            # TODO: how to handle the END? Should I handle here or in the event flow?
             next_actions_with_flows.appendleft((End(), current_flow.name))
-            next_actions_with_flows.appendleft((Reply("Ok, I will stop."), current_flow.name))  # FIXME: This is a hack
+
+            current_flow = event_flows["cancel"]
+            next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
         elif isinstance(command, ChitChatCommand):
-            next_actions_with_flows.appendleft((Reply("I'm a virtual assistant designed to help you with multiple tasks. How can I help you?"), current_flow.name))  # FIXME: This is a hack
+            current_flow = event_flows["chit_chat"]
+            next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
         elif isinstance(command, ClarifyCommand):
-            next_actions_with_flows.appendleft((Reply("I'm sorry, I didn't understand that. Can you please clarify what do you mean?"), current_flow.name))   # FIXME: This is a hack
+            current_flow = event_flows["clarify"]
+            next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
         elif isinstance(command, HumanHandoffCommand):
-            next_actions_with_flows.appendleft((Reply("Before transferring you to an agent, let's try to solve it together. What can I help you with?"), current_flow.name))   # FIXME: This is a hack
+            current_flow = event_flows["human_handoff"]
+            next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
         elif isinstance(command, RepeatCommand):
-            pass  # How can I do it? I must have a history of the conversation to repeat it
+            pass  # Get current conversation and repeat the last message of the bot
         elif isinstance(command, SkipQuestionCommand):
-            next_actions_with_flows.appendleft((Reply("To assist you effectively, I need you to provide the information I requested."), current_flow.name))   # FIXME: This is a hack
+            current_flow = event_flows["skip_question"]
+            next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+        elif command is None:
+            pass  # Do nothing, dummy command
         else:
             raise ValueError(f"Invalid command: {command}")
 
@@ -123,7 +175,7 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
                     next_actions_with_flows.appendleft((action, action_flow_name))  # Re-add the ask task to the queue
                     break  # We don't want to run the next actions until the user responds
             elif isinstance(action, ActionFunction):
-                action_flow = _find_flow_by_name(flows, action_flow_name)
+                action_flow = _find_flow_by_name(all_flows, action_flow_name)
 
                 # The function may be a string, usually because it's from tracker
                 if isinstance(action.function, str):
@@ -148,8 +200,8 @@ def _run_commands(commands: List, flows: List[Flow], tracker: RedisTracker, sess
                 action_func_next_actions = [(action, action_flow.name) for action in action_func_next_actions]
                 next_actions_with_flows.extendleft(reversed(action_func_next_actions))  # Prepend actions to queue
             elif isinstance(action, CallFlow):
-                flow = _find_flow_by_name(flows, action.flow_name)
-                next_actions_with_flows.appendleft((flow.start, flow.name))
+                flow_to_call = _find_flow_by_name(all_flows, action.flow_name)
+                next_actions_with_flows.appendleft((flow_to_call.start, flow_to_call.name))
             elif isinstance(action, End):
                 # Remove all following actions for the current flow
                 next_actions_with_flows = deque(filter(lambda x: x[1] != action_flow_name, next_actions_with_flows))
@@ -210,6 +262,7 @@ class Bot:
         """
         if not self.flows:
             warnings.warn("No flows available. Please add flows to the bot.")
+
             if stream:
                 return iter(())  # Return an empty iterator
             else:
@@ -221,6 +274,23 @@ class Bot:
 
         debug("Current conversation", current_conversation)
 
+        event_flows = {
+            "cancel": _find_internal_flow(self.flows, CancelFlow),
+            "cannot_handle": _find_internal_flow(self.flows, CannotHandle),
+            "chit_chat": _find_internal_flow(self.flows, ChitChat),
+            "clarify": _find_internal_flow(self.flows, Clarify),
+            "completed": _find_internal_flow(self.flows, Completed),
+            "continue_interrupted": _find_internal_flow(self.flows, ContinueInterrupted),
+            "correction": _find_internal_flow(self.flows, Correction),
+            "human_handoff": _find_internal_flow(self.flows, HumanHandoff),
+            "internal_error": _find_internal_flow(self.flows, InternalError),
+            "skip_question": _find_internal_flow(self.flows, SkipQuestion)
+        }
+
+        user_flows = [flow for flow in self.flows if not isinstance(flow, EventFlow)]
+
+        all_flows = user_flows + list(event_flows.values())
+
         current_actions = self.tracker.get_current_actions(self.session.id)
 
         current_flow = None
@@ -229,7 +299,7 @@ class Bot:
         if len(current_actions) > 0:
             following_action, following_flow_name = current_actions[0]
 
-            current_flow = _find_flow_by_name(self.flows, following_flow_name)
+            current_flow = _find_flow_by_name(all_flows, following_flow_name)
             if isinstance(following_action, Ask):
                 current_slot = current_flow.get_slot(following_action.slot.name)
 
@@ -237,7 +307,7 @@ class Bot:
         debug("Current slot", current_slot.name if current_slot else None)
 
         prompt = render_prompt(
-            available_flows=self.flows,
+            available_flows=user_flows,
             current_flow=current_flow,
             current_slot=current_slot,
             current_conversation=current_conversation,
@@ -249,8 +319,9 @@ class Bot:
         command_list = parse_command_prompt_response(response)
 
         def response_generator():
-            for bot_response in _run_commands(commands=command_list, flows=self.flows, tracker=self.tracker,
-                                              session_id=self.session.id, current_flow=current_flow):
+            for bot_response in _run_commands(commands=command_list, flows=user_flows, event_flows=event_flows,
+                                              tracker=self.tracker, session_id=self.session.id,
+                                              current_flow=current_flow):
                 yield bot_response
                 self.tracker.add_message_to_conversation(self.session.id, Role.ASSISTANT, bot_response)
 

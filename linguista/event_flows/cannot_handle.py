@@ -5,18 +5,14 @@
 #
 
 from ..actions import Reply, action
-from ..flow import Flow
+from .base import EventFlow
 
 
-class CannotHandle(Flow):
+class CannotHandle(EventFlow):
 
-    @property
-    def name(self):
-        return "INTERNAL_CANNOT_HANDLE"
+    name = "INTERNAL_CANNOT_HANDLE"
 
-    @property
-    def description(self):
-        return "Cannot handle flow"
+    description = "Cannot handle flow"
 
     @action
     def start(self):

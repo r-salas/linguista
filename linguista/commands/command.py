@@ -128,7 +128,11 @@ def parse_command_prompt_response(response: str):
                 )
         elif match := start_flow_re.search(action):
             flow_name = match.group(1).strip()
-            commands.append(StartFlowCommand(flow_name))
+            if flow_name == "HumanHandoff":
+                # Sometimes the model predicts HumanHandoff as a flow name
+                commands.append(HumanHandoffCommand())
+            else:
+                commands.append(StartFlowCommand(flow_name))
         elif cancel_flow_re.search(action):
             commands.append(CancelFlowCommand())
         elif chitchat_re.search(action):

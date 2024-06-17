@@ -6,7 +6,7 @@
 
 from . import types   # noqa: F401
 from .bot import Bot   # noqa: F401
-from .llm import OpenAI, Anthropic   # noqa: F401
+from .models import OpenAI, Anthropic   # noqa: F401
 from .actions import action   # noqa: F401
 from .flow import Flow   # noqa: F401
 from .flow_slot import FlowSlot   # noqa: F401

@@ -157,6 +157,15 @@ class TransferMoneyFlow(linguista.Flow):
 
 session_id = str(uuid.uuid4())
 
+gpt_3_5 = linguista.OpenAI(
+    api_key=os.environ["OPENAI_API_KEY"],
+    model="gpt-3.5-turbo",
+)
+
+claude_haiku = linguista.Anthropic(
+    api_key=os.environ.get("ANTHROPIC_API_KEY"),
+)
+
 bot = linguista.Bot(
     session_id=session_id,
     flows=[
@@ -164,11 +173,7 @@ bot = linguista.Bot(
         CheckBalanceFlow(),
         GetAccountInfoFlow(),
         CheckExpenseCurrentMonthFlow()
-    ],
-    model=linguista.OpenAI(
-        model="gpt-3.5-turbo",
-        api_key=os.environ["OPENAI_API_KEY"],
-    )
+    ]
 )
 
 try:

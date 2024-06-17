@@ -4,19 +4,15 @@
 #
 #
 
-from ..flow import Flow
+from .base import EventFlow
 from ..actions import Reply, action
 
 
-class Clarify(Flow):
+class Clarify(EventFlow):
 
-    @property
-    def name(self):
-        return "INTERNAL_CLARIFY"
+    name = "INTERNAL_CLARIFY"
 
-    @property
-    def description(self):
-        return "Clarify flow"
+    description = "Clarify flow"
 
     @action
     def start(self):

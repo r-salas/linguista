@@ -1,6 +1,6 @@
 from .cancel_flow import CancelFlow
 from .cannot_handle import CannotHandle
-from .chitchat import Chitchat
+from .chitchat import ChitChat
 from .human_handoff import HumanHandoff
 from .clarify import Clarify
 from .completed import Completed

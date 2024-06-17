@@ -5,18 +5,14 @@
 #
 
 from ..actions import Reply, action
-from ..flow import Flow
+from .base import EventFlow
 
 
-class InternalError(Flow):
+class InternalError(EventFlow):
 
-    @property
-    def name(self):
-        return "INTERNAL_ERROR"
+    name = "INTERNAL_ERROR"
 
-    @property
-    def description(self):
-        return "Internal error flow"
+    description = "Internal error flow"
 
     @action
     def start(self):

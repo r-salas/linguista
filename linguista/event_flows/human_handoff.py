@@ -4,19 +4,15 @@
 #
 #
 
-from ..flow import Flow
+from .base import EventFlow
 from ..actions import action, Reply
 
 
-class HumanHandoff(Flow):
+class HumanHandoff(EventFlow):
 
-    @property
-    def name(self):
-        return "INTERNAL_HUMAN_HANDOFF"
+    name = "INTERNAL_HUMAN_HANDOFF"
 
-    @property
-    def description(self):
-        return "Human handoff flow"
+    description = "Human handoff flow"
 
     @action
     def start(self):

@@ -5,18 +5,14 @@
 #
 
 from ..actions import Reply, action
-from ..flow import Flow
+from .base import EventFlow
 
 
-class Chitchat(Flow):
+class ChitChat(EventFlow):
 
-    @property
-    def name(self):
-        return "INTERNAL_CHITCHAT"
+    name = "INTERNAL_CHITCHAT"
 
-    @property
-    def description(self):
-        return "Chitchat flow"
+    description = "Chitchat flow"
 
     @action
     def start(self):
