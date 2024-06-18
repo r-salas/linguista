@@ -37,4 +37,4 @@ class Anthropic(LLM):
             ],
             temperature=0
         )
-        return message.content
+        return message.content[0].text

@@ -28,14 +28,17 @@ with open(os.path.join(current_dir, "command_prompt_template.jinja2")) as fp:
 
 
 def render_prompt(available_flows: Sequence[Flow], current_flow: Optional[Flow], current_slot: Optional[FlowSlot],
-                  current_conversation: List[Dict[str, str]], latest_user_message: str):
+                  current_flow_slot_values: Optional[Dict[str, str]], current_conversation: List[Dict[str, str]],
+                  latest_user_message: str) -> str:
+    if current_flow_slot_values is None:
+        current_flow_slot_values = {}
+
     latest_user_message = latest_user_message.replace("\n", " ")
 
-    def flow_slot_to_dict(flow_slot: FlowSlot):
+    def flow_slot_to_dict(flow_slot: FlowSlot, in_current_flow: bool = False):
         allowed_values = None
         if flow_slot.type == bool:
             slot_type = "boolean"
-            allowed_values = "true, false"
         elif isinstance(flow_slot.type, Categorical):
             slot_type = "categorical"
             allowed_values = ", ".join(flow_slot.type.categories)
@@ -50,7 +53,8 @@ def render_prompt(available_flows: Sequence[Flow], current_flow: Optional[Flow],
             "name": flow_slot.name,
             "description": flow_slot.description,
             "type": slot_type,
-            "allowed_values": allowed_values
+            "allowed_values": allowed_values,
+            "value": current_flow_slot_values.get(flow_slot.name, "") if in_current_flow else None
         }
 
     def flow_to_dict(flow: Flow):
@@ -79,7 +83,7 @@ def render_prompt(available_flows: Sequence[Flow], current_flow: Optional[Flow],
     else:
         current_flow_name = current_flow.name
         current_flow_slots = current_flow.get_slots()
-        current_flow_slots = [flow_slot_to_dict(slot) for slot in current_flow_slots]
+        current_flow_slots = [flow_slot_to_dict(slot, in_current_flow=True) for slot in current_flow_slots]
 
     if current_slot is None:
         current_slot_name = None
@@ -145,7 +149,7 @@ def parse_command_prompt_response(response: str):
             commands.append(HumanHandoffCommand())
         elif match := clarify_re.search(action):
             options = sorted([opt.strip() for opt in match.group(1).split(",")])
-            if len(options) >= 1:
+            if len(options) > 1:  # NOTE: if there is only one option, is it a clarification?
                 commands.append(ClarifyCommand(options))
 
     return commands

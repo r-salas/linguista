@@ -10,6 +10,7 @@ import warnings
 from collections import deque
 from typing import Optional, List, Sequence, Any, Type, Dict
 
+from .flow_slot import FlowSlot
 from .actions import ActionFunction, Reply, Ask, ChainAction, Action, End, CallFlow
 from .commands import render_prompt, parse_command_prompt_response, SetSlotCommand, StartFlowCommand, CancelFlowCommand, \
     ChitChatCommand, ClarifyCommand, HumanHandoffCommand, RepeatCommand, SkipQuestionCommand
@@ -21,7 +22,8 @@ from .flow import Flow
 from .models import LLM, OpenAI
 from .session import Session
 from .tracker import Tracker, RedisTracker, ProxyTracker
-from .utils import debug
+from .types import Categorical
+from .utils import debug, extract_digits, strtobool
 
 
 def assert_is_action(action: Any):
@@ -116,10 +118,44 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
 
     for command in commands:
         if isinstance(command, SetSlotCommand):
-            if current_flow is None:
-                warnings.warn("No flow is currently active. Cannot set slot.")
+            flow_slot_value = None
+
+            if current_flow:
+                # Parse flow slot value based on slot type
+                flow_slot: FlowSlot = current_flow.get_slot(command.name)
+
+                if flow_slot:
+                    if flow_slot.type == int:
+                        digits = extract_digits(command.value)
+                        flow_slot_value = int(digits)
+                    elif flow_slot.type == float:
+                        digits = extract_digits(command.value)
+                        flow_slot_value = float(digits)
+                    elif flow_slot.type == bool:
+                        flow_slot_value = str(strtobool(command.value))
+                    elif flow_slot.type == str:
+                        flow_slot_value = command.value
+                    elif isinstance(flow_slot.type, Categorical):
+                        matches = [category for category in flow_slot.type.categories
+                                   if category.lower() == command.value.lower()]
+
+                        if matches:
+                            if len(matches) > 1:
+                                warnings.warn(f"Multiple matches found for value '{command.value}' in slot '{flow_slot.name}'")
+
+                            flow_slot_value = matches[0]
+                        else:
+                            debug("No match found for value", command.value, "in slot", flow_slot.name)
+                    else:
+                        raise ValueError(f"Invalid slot type: {flow_slot.type}")
             else:
-                tracker.set_flow_slot(session_id, current_flow.name, command.name, command.value)
+                debug(f"No current flow to set slot {command.name} with value {command.value}.")
+
+            if flow_slot_value is None:
+                current_flow = event_flows["cannot_handle"]
+                next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+            else:
+                tracker.set_flow_slot(session_id, current_flow.name, command.name, flow_slot_value)
         elif isinstance(command, StartFlowCommand):
             if current_flow is None:
                 completed = event_flows["completed"]
@@ -295,11 +331,14 @@ class Bot:
 
         current_flow = None
         current_slot = None
+        current_flow_slot_values = None
 
         if len(current_actions) > 0:
             following_action, following_flow_name = current_actions[0]
 
             current_flow = _find_flow_by_name(all_flows, following_flow_name)
+            current_flow_slot_values = self.tracker.get_flow_slots(self.session.id, current_flow.name)
+
             if isinstance(following_action, Ask):
                 current_slot = current_flow.get_slot(following_action.slot.name)
 
@@ -311,7 +350,8 @@ class Bot:
             current_flow=current_flow,
             current_slot=current_slot,
             current_conversation=current_conversation,
-            latest_user_message=message
+            latest_user_message=message,
+            current_flow_slot_values=current_flow_slot_values
         )
 
         response = self.model(prompt)

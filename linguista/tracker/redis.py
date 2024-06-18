@@ -85,6 +85,15 @@ class RedisTracker(Tracker):
 
         return slot.decode()
 
+    def get_flow_slots(self, session_id: str, flow_name: str):
+        slots_key = _get_redis_flow_slots_key(session_id, flow_name)
+        slots = self._client.hgetall(slots_key)
+
+        if slots is None:
+            return {}
+
+        return {key.decode(): value.decode() for key, value in slots.items()}
+
     def set_flow_slot(self, session_id: str, flow_name: str, slot_name: str, slot_value: str):
         slots_key = _get_redis_flow_slots_key(session_id, flow_name)
         self._client.hset(slots_key, slot_name, slot_value)

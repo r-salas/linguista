@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Type, Union
 
 from .types import Categorical
+from .utils import strtobool
 
 
 @dataclass(frozen=True)

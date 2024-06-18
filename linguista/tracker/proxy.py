@@ -8,7 +8,7 @@ from typing import Any
 
 from ..flow import Flow
 from ..flow_slot import FlowSlot
-from ..utils import strtobool, extract_digits
+from ..utils import strtobool
 
 
 class ProxyTracker:
@@ -21,22 +21,19 @@ class ProxyTracker:
         self.session = SessionProxyTracker(tracker, session_id)
 
     def get_slot(self, slot: FlowSlot):
-        value_str = self.tracker.get_flow_slot(self.session_id, self.current_flow.name, slot.name)
+        value = self.tracker.get_flow_slot(self.session_id, self.current_flow.name, slot.name)
 
-        if value_str is None:
+        if value is None:
             return None
 
-        # Convert the value to the correct type
-        if slot.type == int:
-            value_str_digits = extract_digits(value_str)
-            return int(value_str_digits)
+        if slot.type == bool:
+            return strtobool(value)
+        elif slot.type == int:
+            return int(value)
         elif slot.type == float:
-            value_str_digits = extract_digits(value_str)
-            return float(value_str_digits)
-        elif slot.type == bool:
-            return strtobool(value_str)
+            return float(value)
         else:
-            return value_str
+            return value
 
     def set_slot(self, slot: FlowSlot, value: Any):
         self.tracker.set_flow_slot(self.session_id, self.current_flow.name, slot.name, value)

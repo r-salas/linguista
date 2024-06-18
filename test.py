@@ -85,7 +85,7 @@ class TransferMoneyFlow(linguista.Flow):
 
     email_invoice = linguista.FlowSlot(
         name="email-invoice",
-        description="Send an invoice to the recipient",
+        description="Whether or not send an invoice to the recipient",
         type=bool,
         ask_before_filling=False
     )
@@ -166,6 +166,11 @@ claude_haiku = linguista.Anthropic(
     api_key=os.environ.get("ANTHROPIC_API_KEY"),
 )
 
+claude_opus = linguista.Anthropic(
+    api_key=os.environ.get("ANTHROPIC_API_KEY"),
+    model="claude-3-opus-20240229"
+)
+
 bot = linguista.Bot(
     session_id=session_id,
     flows=[
@@ -173,7 +178,8 @@ bot = linguista.Bot(
         CheckBalanceFlow(),
         GetAccountInfoFlow(),
         CheckExpenseCurrentMonthFlow()
-    ]
+    ],
+    model=gpt_3_5
 )
 
 try:
