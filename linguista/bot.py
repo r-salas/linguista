@@ -73,6 +73,42 @@ def _listify_actions(actions: ChainAction | Action):
         return [actions]
 
 
+def _parse_flow_slot_value(flow_slot: FlowSlot, value: str):
+    """
+    Parse the value of a flow slot based on its type.
+    :param flow_slot: Flow slot to parse the value for.
+    :param value: Value to parse.
+    :return: Parsed value.
+    """
+    flow_slot_value = None
+
+    if flow_slot.type == int:
+        digits = extract_digits(value)
+        flow_slot_value = int(digits)
+    elif flow_slot.type == float:
+        digits = extract_digits(value)
+        flow_slot_value = float(digits)
+    elif flow_slot.type == bool:
+        flow_slot_value = str(strtobool(value))
+    elif flow_slot.type == str:
+        flow_slot_value = value
+    elif isinstance(flow_slot.type, Categorical):
+        matches = [category for category in flow_slot.type.categories
+                   if category.lower() == value.lower()]
+
+        if matches:
+            if len(matches) > 1:
+                warnings.warn(f"Multiple matches found for value '{value}' in slot '{flow_slot.name}'")
+
+            flow_slot_value = matches[0]
+        else:
+            debug("No match found for value", value, "in slot", flow_slot.name)
+    else:
+        raise ValueError(f"Invalid slot type: {flow_slot.type}")
+
+    return flow_slot_value
+
+
 def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow], tracker: RedisTracker,
                   session_id: str, current_flow: Optional[Flow] = None):
     """
@@ -120,40 +156,35 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
         if isinstance(command, SetSlotCommand):
             flow_slot_value = None
 
+            _Ignore = object()
+
             if current_flow:
                 # Parse flow slot value based on slot type
                 flow_slot: FlowSlot = current_flow.get_slot(command.name)
 
                 if flow_slot:
-                    if flow_slot.type == int:
-                        digits = extract_digits(command.value)
-                        flow_slot_value = int(digits)
-                    elif flow_slot.type == float:
-                        digits = extract_digits(command.value)
-                        flow_slot_value = float(digits)
-                    elif flow_slot.type == bool:
-                        flow_slot_value = str(strtobool(command.value))
-                    elif flow_slot.type == str:
-                        flow_slot_value = command.value
-                    elif isinstance(flow_slot.type, Categorical):
-                        matches = [category for category in flow_slot.type.categories
-                                   if category.lower() == command.value.lower()]
+                    # We only set the slot value if the flow slot comes from an Ask action only if `ask_before_filling`
+                    if flow_slot.ask_before_filling:
+                        flow_slot_value = _Ignore
 
-                        if matches:
-                            if len(matches) > 1:
-                                warnings.warn(f"Multiple matches found for value '{command.value}' in slot '{flow_slot.name}'")
+                        if next_actions_with_flows:
+                            next_action, next_action_flow_name = next_actions_with_flows[0]
 
-                            flow_slot_value = matches[0]
-                        else:
-                            debug("No match found for value", command.value, "in slot", flow_slot.name)
+                            is_current_flow = current_flow.name == next_action_flow_name
+                            is_next_action_ask_slot = (next_action.slot.name == flow_slot.name) and isinstance(next_action, Ask)
+
+                            if is_current_flow and is_next_action_ask:
+                                flow_slot_value = _parse_flow_slot_value(flow_slot, command.value)
                     else:
-                        raise ValueError(f"Invalid slot type: {flow_slot.type}")
+                        flow_slot_value = _parse_flow_slot_value(flow_slot, command.value)
             else:
                 debug(f"No current flow to set slot {command.name} with value {command.value}.")
 
             if flow_slot_value is None:
                 current_flow = event_flows["cannot_handle"]
                 next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+            elif flow_slot_value == _Ignore:
+                flow_slo
             else:
                 tracker.set_flow_slot(session_id, current_flow.name, command.name, flow_slot_value)
         elif isinstance(command, StartFlowCommand):
