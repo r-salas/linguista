@@ -3,6 +3,7 @@
 #
 #
 #
+
 import os
 import uuid
 
@@ -80,21 +81,22 @@ class TransferMoneyFlow(linguista.Flow):
     recipient = linguista.FlowSlot(
         name="recipient-name",
         description="Recipient name",
-        type=linguista.types.Categorical(["Alice", "Bob", "Charlie"])
+        type=linguista.types.Categorical(["Alice", "Bob", "Charlie"]),
+        ask_before_filling=True
     )
 
     email_invoice = linguista.FlowSlot(
         name="email-invoice",
         description="Whether or not send an invoice to the recipient",
         type=bool,
-        ask_before_filling=False
+        ask_before_filling=True
     )
 
     transfer_confirmation = linguista.FlowSlot(
         name="transfer-confirmation",
         description="Confirm the transfer",
         type=bool,
-        ask_before_filling=False
+        ask_before_filling=True
     )
 
     @property

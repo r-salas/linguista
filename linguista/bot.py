@@ -73,6 +73,42 @@ def _listify_actions(actions: ChainAction | Action):
         return [actions]
 
 
+def _parse_flow_slot_value(flow_slot: FlowSlot, value: str):
+    """
+    Parse the value of a flow slot based on its type.
+    :param flow_slot: Flow slot to parse the value for.
+    :param value: Value to parse.
+    :return: Parsed value.
+    """
+    flow_slot_value = None
+
+    if flow_slot.type == int:
+        digits = extract_digits(value)
+        flow_slot_value = int(digits)
+    elif flow_slot.type == float:
+        digits = extract_digits(value)
+        flow_slot_value = float(digits)
+    elif flow_slot.type == bool:
+        flow_slot_value = str(strtobool(value))
+    elif flow_slot.type == str:
+        flow_slot_value = value
+    elif isinstance(flow_slot.type, Categorical):
+        matches = [category for category in flow_slot.type.categories
+                   if category.lower() == value.lower()]
+
+        if matches:
+            if len(matches) > 1:
+                warnings.warn(f"Multiple matches found for value '{value}' in slot '{flow_slot.name}'")
+
+            flow_slot_value = matches[0]
+        else:
+            debug("No match found for value", value, "in slot", flow_slot.name)
+    else:
+        raise ValueError(f"Invalid slot type: {flow_slot.type}")
+
+    return flow_slot_value
+
+
 def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow], tracker: RedisTracker,
                   session_id: str, current_flow: Optional[Flow] = None):
     """
@@ -109,6 +145,16 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
     debug("Initial actions", next_actions_with_flows)
     debug("Commands", commands)
 
+    # Check if the next action is an ask, we save the slot requested to be able to check if the user has answered
+    # to the ask. This is used for the functionality `ask_before_filling`. We need to know if the user has answered
+    # from the ask.
+    flow_slot_requested = None
+    if next_actions_with_flows:
+        following_next_action, following_flow_name = next_actions_with_flows[0]
+
+        if isinstance(following_next_action, Ask):
+            flow_slot_requested = (following_next_action.slot, following_flow_name)
+
     # If there are no commands predicted, start the CannotHandle flow
     if not commands:
         current_flow = event_flows["cannot_handle"]
@@ -125,29 +171,7 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
                 flow_slot: FlowSlot = current_flow.get_slot(command.name)
 
                 if flow_slot:
-                    if flow_slot.type == int:
-                        digits = extract_digits(command.value)
-                        flow_slot_value = int(digits)
-                    elif flow_slot.type == float:
-                        digits = extract_digits(command.value)
-                        flow_slot_value = float(digits)
-                    elif flow_slot.type == bool:
-                        flow_slot_value = str(strtobool(command.value))
-                    elif flow_slot.type == str:
-                        flow_slot_value = command.value
-                    elif isinstance(flow_slot.type, Categorical):
-                        matches = [category for category in flow_slot.type.categories
-                                   if category.lower() == command.value.lower()]
-
-                        if matches:
-                            if len(matches) > 1:
-                                warnings.warn(f"Multiple matches found for value '{command.value}' in slot '{flow_slot.name}'")
-
-                            flow_slot_value = matches[0]
-                        else:
-                            debug("No match found for value", command.value, "in slot", flow_slot.name)
-                    else:
-                        raise ValueError(f"Invalid slot type: {flow_slot.type}")
+                    flow_slot_value = _parse_flow_slot_value(flow_slot, command.value)
             else:
                 debug(f"No current flow to set slot {command.name} with value {command.value}.")
 
@@ -168,11 +192,9 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
 
             if current_flow is None:
                 warnings.warn(f"Flow '{command.name}' not found.")
-
                 current_flow = event_flows["cannot_handle"]
-                next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
-            else:
-                next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+
+            next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
         elif isinstance(command, CancelFlowCommand):
             # TODO: how to handle the END? Should I handle here or in the event flow?
             next_actions_with_flows.appendleft((End(), current_flow.name))
@@ -204,10 +226,26 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
             if isinstance(action, Reply):
                 yield action.message
             elif isinstance(action, Ask):
+                action_flow = _find_flow_by_name(all_flows, action_flow_name)
+
+                flow_slot = action_flow.get_slot(action.slot.name)
                 flow_slot_value = tracker.get_flow_slot(session_id, action_flow_name, action.slot.name)
 
+                # We need to check if we must ask the user for the slot value. If the slot is already set, we skip the
+                # ask. If the slot is not set, we ask the user. If the slot is set, but the ask_before_filling is True,
+                # we ask the user again.
+                is_from_ask = False
+                if flow_slot_requested:
+                    flow_slot_requested_name, flow_slot_requested_flow_name = flow_slot_requested
+
+                    if (flow_slot_requested_name.name == action.slot.name) and \
+                            (flow_slot_requested_flow_name == action_flow.name):
+                        is_from_ask = True
+
+                must_ask_slot = flow_slot.ask_before_filling and not is_from_ask
+
                 # If the slot value is not set, ask the user. Otherwise, skip the ask
-                if flow_slot_value is None:
+                if flow_slot_value is None or must_ask_slot:
                     next_actions_with_flows.appendleft((action, action_flow_name))  # Re-add the ask task to the queue
                     break  # We don't want to run the next actions until the user responds
             elif isinstance(action, ActionFunction):
@@ -224,6 +262,7 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
                     "tracker": ProxyTracker(tracker, session_id, action_flow)
                 }
 
+                # Parse the parameters of the action function
                 action_func_signature = inspect.signature(action.function)
                 action_func_args_to_pass = {}
                 for param_name, param_value in action_func_signature.parameters.items():
