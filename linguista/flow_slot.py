@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from typing import Type, Union
 
 from .types import Categorical
-from .utils import strtobool
 
 
 @dataclass(frozen=True)
@@ -16,7 +15,8 @@ class FlowSlot:
     name: str
     description: str
     type: Union[Type, Categorical]
-    ask_before_filling: bool = True
+    ask_before_filling: bool = False   # Whether to ask the user to fill this slot before filling it automatically
+    required: bool = True
 
     def __post_init__(self):
         valid_types = [int, float, bool, str]
@@ -40,7 +40,8 @@ class FlowSlot:
             name=data["name"],
             description=data["description"],
             type=slot_type,
-            ask_before_filling=data["ask_before_filling"]
+            ask_before_filling=data.get("ask_before_filling", False),
+            required=data.get("required", True)
         )
 
     def to_dict(self):
@@ -58,5 +59,6 @@ class FlowSlot:
             "name": self.name,
             "description": self.description,
             "type": type_json,
-            "ask_before_filling": self.ask_before_filling
+            "ask_before_filling": self.ask_before_filling,
+            "required": self.required
         }

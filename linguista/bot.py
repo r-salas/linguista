@@ -76,9 +76,17 @@ def _listify_actions(actions: ChainAction | Action):
 def _parse_flow_slot_value(flow_slot: FlowSlot, value: str):
     """
     Parse the value of a flow slot based on its type.
-    :param flow_slot: Flow slot to parse the value for.
-    :param value: Value to parse.
-    :return: Parsed value.
+
+    Parameters
+    ----------
+    flow_slot: FlowSlot
+        The flow slot.
+    value: str
+        The value to parse.
+    Returns
+    -------
+    Any
+        The parsed value.
     """
     flow_slot_value = None
 
@@ -110,6 +118,19 @@ def _parse_flow_slot_value(flow_slot: FlowSlot, value: str):
 
 
 def _get_last_assistant_messages(conversation: List[Dict[str, str]]) -> List[str]:
+    """
+    Get the last messages from the assistant in the conversation.
+
+    Parameters
+    ----------
+    conversation: List[Dict[str, str]]
+        The conversation in the format [{"role": str, "message": str}].
+
+    Returns
+    -------
+    List[str]
+        The last messages from the assistant.
+    """
     last_bot_messages = []
     for message in reversed(conversation):
         if message["role"] == Role.ASSISTANT:
@@ -271,8 +292,8 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
 
                 must_ask_slot = flow_slot.ask_before_filling and not is_from_ask
 
-                # If the slot value is not set, ask the user. Otherwise, skip the ask
-                if flow_slot_value is None or must_ask_slot:
+                # If the slot value is not set, ask the user. Otherwise, skip the ask.
+                if (flow_slot_value is None and flow_slot.required) or must_ask_slot:
                     next_actions_with_flows.appendleft((action, action_flow_name))  # Re-add the ask task to the queue
                     break  # We don't want to run the next actions until the user responds
             elif isinstance(action, ActionFunction):

@@ -85,6 +85,13 @@ class TransferMoneyFlow(linguista.Flow):
         ask_before_filling=True
     )
 
+    notes = linguista.FlowSlot(
+        name="notes",
+        description="Notes for the transfer",
+        type=str,
+        required=False
+    )
+
     email_invoice = linguista.FlowSlot(
         name="email-invoice",
         description="Whether or not send an invoice to the recipient",
@@ -130,7 +137,13 @@ class TransferMoneyFlow(linguista.Flow):
     def ask_recipient(self):
         ask_recipient = linguista.actions.Ask(self.recipient, prompt="Who would you like to transfer to?")
 
-        return ask_recipient >> self.ask_email_invoice
+        return ask_recipient >> self.ask_notes
+
+    @linguista.action
+    def ask_notes(self):
+        ask_notes = Ask(self.notes, prompt="Any notes for the transfer?")
+
+        return ask_notes >> self.ask_email_invoice
 
     @linguista.action
     def ask_email_invoice(self):
@@ -152,9 +165,18 @@ class TransferMoneyFlow(linguista.Flow):
         transfer_confirmation = tracker.get_slot(self.transfer_confirmation)
 
         if transfer_confirmation:
-            return Reply("Transfer completed")
+            amount = tracker.get_slot(self.amount)
+            recipient = tracker.get_slot(self.recipient)
+            notes = tracker.get_slot(self.notes)
+            email_invoice = tracker.get_slot(self.email_invoice)
+
+            return Reply(f"Transferring {amount}€ to {recipient} with notes: {notes} and email invoice: {email_invoice}") >> self.complete_transfer
         else:
             return Reply("Transfer cancelled")
+
+    @linguista.action
+    def complete_transfer(self):
+        return Reply("Transfer completed")
 
 
 session_id = str(uuid.uuid4())
