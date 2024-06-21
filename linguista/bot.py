@@ -109,6 +109,19 @@ def _parse_flow_slot_value(flow_slot: FlowSlot, value: str):
     return flow_slot_value
 
 
+def _get_last_assistant_messages(conversation: List[Dict[str, str]]) -> List[str]:
+    last_bot_messages = []
+    for message in reversed(conversation):
+        if message["role"] == Role.ASSISTANT:
+            last_bot_messages.append(message["message"])
+
+        # Filter last messages from the user until the last bot message
+        if message["role"] == Role.USER and last_bot_messages:
+            break
+
+    return list(reversed(last_bot_messages))
+
+
 def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow], tracker: RedisTracker,
                   session_id: str, current_flow: Optional[Flow] = None):
     """
@@ -211,7 +224,21 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
             current_flow = event_flows["human_handoff"]
             next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
         elif isinstance(command, RepeatCommand):
-            pass  # Get current conversation and repeat the last message of the bot
+            # FIXME: configurable rephrase the last message from the assistant?
+
+            # If it's an ask, we don't want to repeat the ask, so we skip it
+            if not flow_slot_requested:
+                #  We get the last messages from the assistant and repeat it.
+                conversation = tracker.get_conversation(session_id)
+                last_bot_messages = _get_last_assistant_messages(conversation)
+
+                if last_bot_messages:
+                    for message in last_bot_messages:
+                        yield message
+                else:
+                    # No messages from the assistant to repeat
+                    current_flow = event_flows["cannot_handle"]
+                    next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
         elif isinstance(command, SkipQuestionCommand):
             current_flow = event_flows["skip_question"]
             next_actions_with_flows.appendleft((current_flow.start, current_flow.name))

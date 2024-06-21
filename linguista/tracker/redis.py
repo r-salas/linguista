@@ -60,7 +60,8 @@ class RedisTracker(Tracker):
         if conversation is None:
             return []
 
-        return [json.loads(message) for message in conversation]
+        conversation_json = [json.loads(message) for message in conversation]
+        return [{"role": Role(message["role"]), "message": message["message"]} for message in conversation_json]
 
     def add_message_to_conversation(self, session_id: str, role: Role, message: str):
         conversation_key = _get_redis_conversation_key(session_id)

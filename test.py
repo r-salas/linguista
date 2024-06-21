@@ -164,8 +164,18 @@ gpt_3_5 = linguista.OpenAI(
     model="gpt-3.5-turbo",
 )
 
+gpt_4o = linguista.OpenAI(
+    api_key=os.environ["OPENAI_API_KEY"],
+    model="gpt-4o",
+)
+
 claude_haiku = linguista.Anthropic(
     api_key=os.environ.get("ANTHROPIC_API_KEY"),
+)
+
+claude_sonnet = linguista.Anthropic(
+    api_key=os.environ.get("ANTHROPIC_API_KEY"),
+    model="claude-3-5-sonnet-20240620"
 )
 
 claude_opus = linguista.Anthropic(

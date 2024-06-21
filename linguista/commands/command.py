@@ -17,6 +17,8 @@ from .human_handoff import HumanHandoffCommand
 from .set_slot import SetSlotCommand
 from .skip_question import SkipQuestionCommand
 from .start_flow import StartFlowCommand
+from .repeat import RepeatCommand
+from ..enums import Role
 from ..flow import Flow
 from ..flow_slot import FlowSlot
 from ..types import Categorical
@@ -67,8 +69,8 @@ def render_prompt(available_flows: Sequence[Flow], current_flow: Optional[Flow],
     available_flows = [flow_to_dict(flow) for flow in available_flows]
 
     role_to_str = {
-        "USER": "USER",
-        "ASSISTANT": "AI"
+        Role.USER: "USER",
+        Role.ASSISTANT: "AI"
     }
 
     last_n_messages = 20  # FIXME: make it configurable
@@ -117,6 +119,7 @@ def parse_command_prompt_response(response: str):
     skip_question_re = re.compile(r"SkipQuestion\(\)")
     humand_handoff_re = re.compile(r"HumanHandoff\(\)")
     clarify_re = re.compile(r"Clarify\(([a-zA-Z0-9_, ]+)\)")
+    repeat_re = re.compile(r"Repeat\(\)")
 
     for action in response:
         if match := slot_set_re.search(action):
@@ -147,6 +150,8 @@ def parse_command_prompt_response(response: str):
             commands.append(SkipQuestionCommand())
         elif humand_handoff_re.search(action):
             commands.append(HumanHandoffCommand())
+        elif repeat_re.search(action):
+            commands.append(RepeatCommand())
         elif match := clarify_re.search(action):
             options = sorted([opt.strip() for opt in match.group(1).split(",")])
             if len(options) > 1:  # NOTE: if there is only one option, is it a clarification?
