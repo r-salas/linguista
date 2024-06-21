@@ -226,7 +226,7 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
         elif isinstance(command, RepeatCommand):
             # FIXME: configurable rephrase the last message from the assistant?
 
-            # If it's an ask, we don't want to repeat the ask, so we skip it
+            # If there's an ask, we only repeat the ask, so we do nothing here
             if not flow_slot_requested:
                 #  We get the last messages from the assistant and repeat it.
                 conversation = tracker.get_conversation(session_id)
