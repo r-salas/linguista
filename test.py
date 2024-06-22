@@ -103,7 +103,7 @@ class TransferMoneyFlow(linguista.Flow):
         name="transfer-confirmation",
         description="Confirm the transfer",
         type=bool,
-        ask_before_filling=True
+        ask_before_filling=True,
     )
 
     @property

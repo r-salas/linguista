@@ -41,6 +41,10 @@ def _get_redis_flow_slots_key(session_id: str, flow_name: str) -> str:
     return f"linguista:flow_slots:{session_id}:{flow_name}"
 
 
+def _get_redis_following_actions_key(session_id: str, flow_name: str) -> str:
+    return f"linguista:following_actions:{session_id}:{flow_name}"
+
+
 class RedisTracker(Tracker):
 
     def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0):
@@ -137,3 +141,24 @@ class RedisTracker(Tracker):
     def delete_current_actions(self, session_id: str):
         current_actions_key = _get_redis_current_actions_key(session_id)
         self._client.delete(current_actions_key)
+
+    def save_following_actions_for_flow_slot(self, session_id: str, flow_name: str, slot_name: str, actions: Sequence["Action"]):
+        following_actions_key = _get_redis_following_actions_key(session_id, flow_name)
+        self._client.hset(following_actions_key, slot_name, json.dumps([action.to_dict() for action in actions]))
+
+    def get_following_actions_for_flow_slot(self, session_id: str, flow_name: str, slot_name: str) -> Sequence["Action"]:
+        following_actions_key = _get_redis_following_actions_key(session_id, flow_name)
+        following_actions_json_str = self._client.hget(following_actions_key, slot_name)
+
+        if following_actions_json_str is None:
+            return []
+
+        return [Action.from_dict(action_dict) for action_dict in json.loads(following_actions_json_str)]
+
+    def delete_following_actions(self, session_id: str):
+        following_actions_key = _get_redis_following_actions_key(session_id, "*")
+
+        pipe = self._client.pipeline()
+        for key in self._client.scan_iter(following_actions_key):
+            pipe.delete(key)
+        pipe.execute()

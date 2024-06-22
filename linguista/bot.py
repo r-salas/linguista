@@ -12,11 +12,12 @@ from typing import Optional, List, Sequence, Any, Type, Dict
 
 from .flow_slot import FlowSlot
 from .actions import ActionFunction, Reply, Ask, ChainAction, Action, End, CallFlow
-from .commands import render_prompt, parse_command_prompt_response, SetSlotCommand, StartFlowCommand, CancelFlowCommand, \
-    ChitChatCommand, ClarifyCommand, HumanHandoffCommand, RepeatCommand, SkipQuestionCommand
+from .commands import (render_prompt, parse_command_prompt_response, SetSlotCommand, StartFlowCommand,
+                       CancelFlowCommand, ChitChatCommand, ClarifyCommand, HumanHandoffCommand, RepeatCommand,
+                       SkipQuestionCommand)
 from .enums import Role
-from .event_flows import CancelFlow, CannotHandle, ChitChat, Clarify, Completed, ContinueInterrupted, Correction, \
-    HumanHandoff, InternalError, SkipQuestion
+from .event_flows import (CancelFlow, CannotHandle, ChitChat, Clarify, Completed, ContinueInterrupted, Correction,
+                          HumanHandoff, InternalError, SkipQuestion)
 from .event_flows.base import EventFlow
 from .flow import Flow
 from .models import LLM, OpenAI
@@ -213,7 +214,20 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
                 current_flow = event_flows["cannot_handle"]
                 next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
             else:
+                # We need to check if it's a correction so we back-track the flow
+                previous_flow_slot_value = tracker.get_flow_slot(session_id, current_flow.name, command.name)
+
                 tracker.set_flow_slot(session_id, current_flow.name, command.name, flow_slot_value)
+
+                if previous_flow_slot_value is not None:  # not a correction
+                    # Replace the current actions with the following
+                    following_actions = tracker.get_following_actions_for_flow_slot(session_id, current_flow.name,
+                                                                                    command.name)
+                    following_actions = [(action, current_flow.name) for action in following_actions]
+                    next_actions_with_flows = deque(following_actions)
+
+                    current_flow = event_flows["correction"]
+                    next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
         elif isinstance(command, StartFlowCommand):
             if current_flow is None:
                 completed = event_flows["completed"]
@@ -321,6 +335,15 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
                 # The action may return a single action or a list of actions
                 action_func_next_actions = _listify_actions(action_func_next_actions)
                 action_func_next_actions = [(action, action_flow.name) for action in action_func_next_actions]
+
+                # Save following actions for the current flow slot, so we can resume the flow if there's any correction
+                ask_indices = [i for i, (action, _) in enumerate(action_func_next_actions) if isinstance(action, Ask)]
+                for index in ask_indices:
+                    following_actions = [action for action, flow_name in action_func_next_actions[index + 1:]]
+                    ask_flow_slot, ask_flow_name = action_func_next_actions[index]
+                    tracker.save_following_actions_for_flow_slot(session_id, ask_flow_name, ask_flow_slot.slot.name,
+                                                                 following_actions)
+
                 next_actions_with_flows.extendleft(reversed(action_func_next_actions))  # Prepend actions to queue
             elif isinstance(action, CallFlow):
                 flow_to_call = _find_flow_by_name(all_flows, action.flow_name)
@@ -336,6 +359,7 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
     if following is None:  # no more actions to run
         tracker.delete_current_actions(session_id)
         tracker.delete_flow_slots(session_id)  # Delete all flow slots
+        tracker.delete_following_actions(session_id)  # Delete all following actions for flow slots
     else:
         following_next_action, following_flow_name = following
 
