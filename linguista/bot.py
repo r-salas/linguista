@@ -282,6 +282,10 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
                 completed_flow = event_flows["completed"]
                 next_actions_with_flows.appendleft((completed_flow.start, completed_flow.name))
             else:
+                if current_flow.name == command.name:
+                    # The flow is already running, we do nothing. We should not start the same flow again.
+                    continue
+
                 continue_interrupted_flow = event_flows["continue_interrupted"]
                 next_actions_with_flows.appendleft((continue_interrupted_flow.start, continue_interrupted_flow.name))
 
