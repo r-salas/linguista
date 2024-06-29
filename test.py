@@ -75,14 +75,12 @@ class TransferMoneyFlow(linguista.Flow):
         name="amount",
         description="Amount of money to transfer",
         type=float,
-        # TODO: add default value
     )
 
     recipient = linguista.FlowSlot(
         name="recipient-name",
         description="Recipient name",
         type=linguista.types.Categorical(["Alice", "Bob", "Charlie"]),
-        ask_before_filling=True
     )
 
     notes = linguista.FlowSlot(
@@ -96,7 +94,6 @@ class TransferMoneyFlow(linguista.Flow):
         name="email-invoice",
         description="Whether or not send an invoice to the recipient",
         type=bool,
-        ask_before_filling=True
     )
 
     transfer_confirmation = linguista.FlowSlot(
@@ -213,7 +210,7 @@ bot = linguista.Bot(
         GetAccountInfoFlow(),
         CheckExpenseCurrentMonthFlow()
     ],
-    model=gpt_3_5
+    model=claude_haiku
 )
 
 try:

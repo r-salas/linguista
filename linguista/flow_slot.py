@@ -22,6 +22,9 @@ class FlowSlot:
         valid_types = [int, float, bool, str]
         assert isinstance(self.type, Categorical) or self.type in valid_types, f"Invalid slot type: {self.type}"
 
+    def __eq__(self, other):
+        return self.name == other.name
+
     @staticmethod
     def from_dict(data: dict):
         if data["type"]["type"] == "categorical":

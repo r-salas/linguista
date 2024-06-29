@@ -36,7 +36,7 @@ The user just said """{{ user_message }}""".
 Based on this information generate a list of actions you want to take. Your job is to start flows and to fill slots where appropriate. Any logic of what happens afterward  is handled by the flow engine. These are your available actions:
 * Slot setting, described by "SetSlot(slot_name, slot_value)". An example would be "SetSlot(recipient, Freddy)". If the user doesn't provide a value for a slot, don't include it.
 * Starting another flow, described by "StartFlow(flow_name)". An example would be "StartFlow(transfer_money)"
-* Cancelling the current flow, described by "CancelFlow()"
+* Cancelling the current flow, described by "CancelFlow()". Only if the user explicitly asks to cancel the current flow.
 * Repeating what the assistant just said, described by "Repeat()".
 * Clarifying which flow should be started, described by "Clarify(flow_name 1, flow_name 2, flow_name 3, ...)". An example would be "Clarify(list_contacts, add_contact, remove_contact)" if the user just wrote "contacts" and there are multiple potential candidates. It also works with a single flow name to confirm you understood correctly, as in Clarify(transfer_money).
 * Intercepting and handle user messages with the intent to bypass the current step in the flow, described by "SkipQuestion()". Examples of user skip phrases are: "Go to the next question", "Ask me something else".
@@ -50,9 +50,12 @@ Only use information provided by the user.
 Only start a flow if it's completely clear what the user wants. Imagine you were a person reading this message. If it's not 100% clear, clarify the next step.
 Don't be overly confident. Take a conservative approach and clarify before proceeding.
 If the user asks for two things which seem contradictory, clarify before starting a flow.
+If the user asks for another flow while in the middle of a flow, only start the new flow. It would be wrong behavior to start a new flow and cancel the current flow.
 If it's not clear whether the user wants to skip the step or to cancel the flow, cancel the flow.
 Strictly adhere to the provided action types listed above.
 Focus on the last message and take it one step at a time.
 Use the previous conversation steps only to aid understanding.
+It would be wrong behavior to set a slot when not asked or when user input cannot clearly be assigned to a slot.
+Set boolean slot only if the user explicitly provides a value for it.
 
 Your action list:

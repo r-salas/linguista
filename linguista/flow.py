@@ -56,10 +56,10 @@ class Flow(ABC):
 
 
 def _get_slots_from_flow(flow: Flow):
-    return_slots = set()
+    return_slots = list()
     slots_members = inspect.getmembers(flow, lambda attr: isinstance(attr, FlowSlot))
 
     for slot_var_name, flow_slot in slots_members:
-        return_slots.add(flow_slot)
+        return_slots.append(flow_slot)
 
     return return_slots
