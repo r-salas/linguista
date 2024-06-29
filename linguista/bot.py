@@ -178,7 +178,7 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
     next_actions_with_flows = deque(next_actions_with_flows)  # Convert to deque for efficient popping
 
     debug("Initial actions", next_actions_with_flows)
-    debug("Commands", commands)
+    debug("LLM Commands", commands)
 
     # Check if the next action is an ask, we save the slot requested to be able to check if the user has answered
     # to the ask. This is used for the functionality `ask_before_filling`. We need to know if the user has answered
@@ -192,10 +192,29 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
 
     # If there are no commands predicted, start the CannotHandle flow
     if not commands:
-        current_flow = event_flows["cannot_handle"]
-        next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+        cannot_handle_flow = event_flows["cannot_handle"]
+        next_actions_with_flows.appendleft((cannot_handle_flow.start, cannot_handle_flow.name))
 
-        commands.append(None)  # Add a dummy command so the actions loop runs at least once
+    # Sometimes the commands are set to cancel the flow and start the same flow again, this will never be the
+    # behaviour we want, so we need to check if the flow is already in the current actions and remove it
+    # from the commands
+    if current_flow:
+        # Filter if both CancelFlowCommand and StartFlowCommand with same flow name are present
+        start_command_index = next((i for i, command in enumerate(commands) if isinstance(command, StartFlowCommand) and
+                                    command.name == current_flow.name), None)
+        cancel_command_index = next((i for i, command in enumerate(commands) if isinstance(command, CancelFlowCommand)), None)
+
+        if start_command_index is not None and cancel_command_index is not None:
+            debug("Cancel and start flow commands found, removing them from the commands.")
+
+            commands = [command for i, command in enumerate(commands) if i not in [start_command_index,
+                                                                                   cancel_command_index]]
+
+    # The LLM
+
+    debug("Commands", commands)
+
+    backtrack_flow_slot = None
 
     for command in commands:
         if isinstance(command, SetSlotCommand):
@@ -207,12 +226,16 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
 
                 if flow_slot:
                     flow_slot_value = _parse_flow_slot_value(flow_slot, command.value)
+                else:
+                    debug(f"Slot {command.name} not found in flow {current_flow.name}.")
             else:
                 debug(f"No current flow to set slot {command.name} with value {command.value}.")
 
             if flow_slot_value is None:
-                current_flow = event_flows["cannot_handle"]
-                next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+                debug(f"Invalid slot value for slot {command.name} with value {command.value}.")
+
+                cannot_handle_flow = event_flows["cannot_handle"]
+                next_actions_with_flows.appendleft((cannot_handle_flow.start, cannot_handle_flow.name))
             else:
                 # We need to check if it's a correction so we back-track the flow
                 previous_flow_slot_value = tracker.get_flow_slot(session_id, current_flow.name, command.name)
@@ -220,44 +243,71 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
                 tracker.set_flow_slot(session_id, current_flow.name, command.name, flow_slot_value)
 
                 if previous_flow_slot_value is not None:  # not a correction
-                    # Replace the current actions with the following
-                    following_actions = tracker.get_following_actions_for_flow_slot(session_id, current_flow.name,
-                                                                                    command.name)
-                    following_actions = [(action, current_flow.name) for action in following_actions]
-                    next_actions_with_flows = deque(following_actions)
+                    # What if there's multiple updates to different slots?
+                    # How can we know which slot to backtrack?
+                    # We will backtrack by order of defintion of the slots
+                    if backtrack_flow_slot is None:
+                        # No other backtracks so far, we backtrack this slot
+                        backtrack_flow_slot = current_flow.get_slot(command.name)
 
-                    current_flow = event_flows["correction"]
-                    next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+                        # Replace the current actions with the following
+                        following_actions = tracker.get_following_actions_for_flow_slot(session_id, current_flow.name,
+                                                                                        command.name)
+                        following_actions = [(action, current_flow.name) for action in following_actions]
+                        next_actions_with_flows = deque(following_actions)
+                    else:
+                        flow_slots = current_flow.get_slots()
+                        new_backtrack_flow_slot = current_flow.get_slot(command.name)
+                        previous_backtrack_flow_slot_index = flow_slots.index(backtrack_flow_slot)
+                        new_backtrack_flow_slot_index = flow_slots.index(new_backtrack_flow_slot)
+
+                        if new_backtrack_flow_slot_index < previous_backtrack_flow_slot_index:
+                            debug(f"Backtracking to slot {new_backtrack_flow_slot.name}.")
+                            # The new slot is before the previous slot, we backtrack this slot
+                            backtrack_flow_slot = new_backtrack_flow_slot
+
+                            # Replace the current actions with the following
+                            following_actions = tracker.get_following_actions_for_flow_slot(session_id,
+                                                                                            current_flow.name,
+                                                                                            command.name)
+                            following_actions = [(action, current_flow.name) for action in following_actions]
+                            next_actions_with_flows = deque(following_actions)
+
+                    flow_slot_requested = None  # Reset the flow slot requested
+
+                    correction_flow = event_flows["correction"]
+                    next_actions_with_flows.appendleft((correction_flow.start, correction_flow.name))
         elif isinstance(command, StartFlowCommand):
             if current_flow is None:
-                completed = event_flows["completed"]
-                next_actions_with_flows.appendleft((completed.start, completed.name))
+                completed_flow = event_flows["completed"]
+                next_actions_with_flows.appendleft((completed_flow.start, completed_flow.name))
             else:
-                continue_interrupted = event_flows["continue_interrupted"]
-                next_actions_with_flows.appendleft((continue_interrupted.start, continue_interrupted.name))
+                continue_interrupted_flow = event_flows["continue_interrupted"]
+                next_actions_with_flows.appendleft((continue_interrupted_flow.start, continue_interrupted_flow.name))
 
             current_flow = _find_flow_by_name(all_flows, command.name)
 
             if current_flow is None:
                 warnings.warn(f"Flow '{command.name}' not found.")
-                current_flow = event_flows["cannot_handle"]
-
-            next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+                cannot_handle_flow = event_flows["cannot_handle"]
+                next_actions_with_flows.appendleft((cannot_handle_flow.start, cannot_handle_flow.name))
+            else:
+                next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
         elif isinstance(command, CancelFlowCommand):
             # TODO: how to handle the END? Should I handle here or in the event flow?
             next_actions_with_flows.appendleft((End(), current_flow.name))
 
-            current_flow = event_flows["cancel"]
-            next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+            cancel_flow = event_flows["cancel"]
+            next_actions_with_flows.appendleft((cancel_flow.start, cancel_flow.name))
         elif isinstance(command, ChitChatCommand):
-            current_flow = event_flows["chit_chat"]
-            next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+            chit_chat_flow = event_flows["chit_chat"]
+            next_actions_with_flows.appendleft((chit_chat_flow.start, chit_chat_flow.name))
         elif isinstance(command, ClarifyCommand):
-            current_flow = event_flows["clarify"]
-            next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+            clarify_flow = event_flows["clarify"]
+            next_actions_with_flows.appendleft((clarify_flow.start, clarify_flow.name))
         elif isinstance(command, HumanHandoffCommand):
-            current_flow = event_flows["human_handoff"]
-            next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+            human_handoff_flow = event_flows["human_handoff"]
+            next_actions_with_flows.appendleft((human_handoff_flow.start, human_handoff_flow.name))
         elif isinstance(command, RepeatCommand):
             # FIXME: configurable rephrase the last message from the assistant?
 
@@ -272,87 +322,86 @@ def _run_commands(commands: List, flows: List[Flow], event_flows: Dict[str, Flow
                         yield message
                 else:
                     # No messages from the assistant to repeat
-                    current_flow = event_flows["cannot_handle"]
-                    next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
+                    cannot_handle_flow = event_flows["cannot_handle"]
+                    next_actions_with_flows.appendleft((cannot_handle_flow.start, cannot_handle_flow.name))
         elif isinstance(command, SkipQuestionCommand):
-            current_flow = event_flows["skip_question"]
-            next_actions_with_flows.appendleft((current_flow.start, current_flow.name))
-        elif command is None:
-            pass  # Do nothing, dummy command
+            skip_question_flow = event_flows["skip_question"]
+            next_actions_with_flows.appendleft((skip_question_flow.start, skip_question_flow.name))
         else:
             raise ValueError(f"Invalid command: {command}")
 
-        while next_actions_with_flows:
-            action, action_flow_name = next_actions_with_flows.popleft()
+    while next_actions_with_flows:
+        action, action_flow_name = next_actions_with_flows.popleft()
 
-            if isinstance(action, Reply):
-                yield action.message
-            elif isinstance(action, Ask):
-                action_flow = _find_flow_by_name(all_flows, action_flow_name)
+        if isinstance(action, Reply):
+            yield action.message
+        elif isinstance(action, Ask):
+            action_flow = _find_flow_by_name(all_flows, action_flow_name)
 
-                flow_slot = action_flow.get_slot(action.slot.name)
-                flow_slot_value = tracker.get_flow_slot(session_id, action_flow_name, action.slot.name)
+            flow_slot = action_flow.get_slot(action.slot.name)
+            flow_slot_value = tracker.get_flow_slot(session_id, action_flow_name, action.slot.name)
 
-                # We need to check if we must ask the user for the slot value. If the slot is already set, we skip the
-                # ask. If the slot is not set, we ask the user. If the slot is set, but the ask_before_filling is True,
-                # we ask the user again.
-                is_from_ask = False
-                if flow_slot_requested:
-                    flow_slot_requested_name, flow_slot_requested_flow_name = flow_slot_requested
+            # We need to check if we must ask the user for the slot value.
+            # If the slot is already set, we skip the ask.
+            # If the slot is not set, we ask the user. If the slot is set, but the ask_before_filling is True,
+            # we ask the user again.
+            is_flow_slot_from_ask = False
+            if flow_slot_requested:
+                flow_slot_requested_name, flow_slot_requested_flow_name = flow_slot_requested
 
-                    if (flow_slot_requested_name.name == action.slot.name) and \
-                            (flow_slot_requested_flow_name == action_flow.name):
-                        is_from_ask = True
+                if (flow_slot_requested_name.name == action.slot.name) and \
+                        (flow_slot_requested_flow_name == action_flow.name):
+                    is_flow_slot_from_ask = True
 
-                must_ask_slot = flow_slot.ask_before_filling and not is_from_ask
+            must_ask_slot = flow_slot.ask_before_filling and not is_flow_slot_from_ask
 
-                # If the slot value is not set, ask the user. Otherwise, skip the ask.
-                if (flow_slot_value is None and flow_slot.required) or must_ask_slot:
-                    next_actions_with_flows.appendleft((action, action_flow_name))  # Re-add the ask task to the queue
-                    break  # We don't want to run the next actions until the user responds
-            elif isinstance(action, ActionFunction):
-                action_flow = _find_flow_by_name(all_flows, action_flow_name)
+            # If the slot value is not set, ask the user if required. Otherwise, skip the ask.
+            if (flow_slot_value is None and flow_slot.required) or must_ask_slot:
+                next_actions_with_flows.appendleft((action, action_flow_name))  # Re-add the ask task to the queue
+                break  # We don't want to run the next actions until the user responds
+        elif isinstance(action, ActionFunction):
+            action_flow = _find_flow_by_name(all_flows, action_flow_name)
 
-                # The function may be a string, usually because it's from tracker
-                if isinstance(action.function, str):
-                    # If the function is a string, replace the action with the actual function
-                    action = getattr(action_flow, action.function, None)
+            # The function may be a string, usually because it's from tracker
+            if isinstance(action.function, str):
+                # If the function is a string, replace the action with the actual function
+                action = getattr(action_flow, action.function, None)
 
-                # Dynamically inject the available parameters to the action function.
-                # If the action function doesn't need any of the parameters, they will be ignored.
-                available_params = {
-                    "tracker": ProxyTracker(tracker, session_id, action_flow)
-                }
+            # Dynamically inject the available parameters to the action function.
+            # If the action function doesn't need any of the parameters, they will be ignored.
+            available_params = {
+                "tracker": ProxyTracker(tracker, session_id, action_flow)
+            }
 
-                # Parse the parameters of the action function
-                action_func_signature = inspect.signature(action.function)
-                action_func_args_to_pass = {}
-                for param_name, param_value in action_func_signature.parameters.items():
-                    if param_name in available_params:
-                        action_func_args_to_pass[param_name] = available_params[param_name]
+            # Parse the parameters of the action function
+            action_func_signature = inspect.signature(action.function)
+            action_func_args_to_pass = {}
+            for param_name, param_value in action_func_signature.parameters.items():
+                if param_name in available_params:
+                    action_func_args_to_pass[param_name] = available_params[param_name]
 
-                action_func_next_actions = action.function(action_flow, **action_func_args_to_pass)
-                # The action may return a single action or a list of actions
-                action_func_next_actions = _listify_actions(action_func_next_actions)
-                action_func_next_actions = [(action, action_flow.name) for action in action_func_next_actions]
+            action_func_next_actions = action.function(action_flow, **action_func_args_to_pass)
+            # The action may return a single action or a list of actions
+            action_func_next_actions = _listify_actions(action_func_next_actions)
+            action_func_next_actions = [(action, action_flow.name) for action in action_func_next_actions]
 
-                # Save following actions for the current flow slot, so we can resume the flow if there's any correction
-                ask_indices = [i for i, (action, _) in enumerate(action_func_next_actions) if isinstance(action, Ask)]
-                for index in ask_indices:
-                    following_actions = [action for action, flow_name in action_func_next_actions[index + 1:]]
-                    ask_flow_slot, ask_flow_name = action_func_next_actions[index]
-                    tracker.save_following_actions_for_flow_slot(session_id, ask_flow_name, ask_flow_slot.slot.name,
-                                                                 following_actions)
+            # Save following actions for the current flow slot, so we can resume the flow if there's any correction
+            ask_indices = [i for i, (action, _) in enumerate(action_func_next_actions) if isinstance(action, Ask)]
+            for index in ask_indices:
+                following_actions = [action for action, flow_name in action_func_next_actions[index + 1:]]
+                ask_flow_slot, ask_flow_name = action_func_next_actions[index]
+                tracker.save_following_actions_for_flow_slot(session_id, ask_flow_name, ask_flow_slot.slot.name,
+                                                             following_actions)
 
-                next_actions_with_flows.extendleft(reversed(action_func_next_actions))  # Prepend actions to queue
-            elif isinstance(action, CallFlow):
-                flow_to_call = _find_flow_by_name(all_flows, action.flow_name)
-                next_actions_with_flows.appendleft((flow_to_call.start, flow_to_call.name))
-            elif isinstance(action, End):
-                # Remove all following actions for the current flow
-                next_actions_with_flows = deque(filter(lambda x: x[1] != action_flow_name, next_actions_with_flows))
-            else:
-                raise ValueError(f"Invalid action: {action}")
+            next_actions_with_flows.extendleft(reversed(action_func_next_actions))  # Prepend actions to queue
+        elif isinstance(action, CallFlow):
+            flow_to_call = _find_flow_by_name(all_flows, action.flow_name)
+            next_actions_with_flows.appendleft((flow_to_call.start, flow_to_call.name))
+        elif isinstance(action, End):
+            # Remove all following actions for the current flow
+            next_actions_with_flows = deque(filter(lambda x: x[1] != action_flow_name, next_actions_with_flows))
+        else:
+            raise ValueError(f"Invalid action: {action}")
 
     following = next_actions_with_flows[0] if next_actions_with_flows else None
 
